@@ -68,7 +68,8 @@ The React design preview can be run with `npm install` and `npm run dev`; it has
 
 - Native APK assembly and optimization: passed.
 - Native score and update-policy tests: 17 passed.
-- Native screen, interaction and update controls are checked on an isolated Pixel 6 / Android 14 emulator. Live release download and signing migration have separate opt-in device tests.
+- Nine native screen and interaction checks, including update controls: passed on an isolated Pixel 6 / Android 14 emulator. Live release download and signing migration have separate integration probes.
+- Original preview → dedicated signing key upgrade: passed; private files, preferences and original installation identity preserved.
 - Android compatibility checks: passed with non-blocking dependency/style warnings.
 - Actual Galaxy Watch and Samsung phone syncing: requires your device; not verified here.
 

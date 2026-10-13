@@ -159,7 +159,7 @@ class AppUpdateViewModel(app:Application):AndroidViewModel(app) {
     private val _install=MutableSharedFlow<File>(extraBufferCapacity=1)
     val installation=_install.asSharedFlow()
     private var downloadJob:Job?=null
-    private var downloadGeneration=0
+    @Volatile private var downloadGeneration=0
     private val listener=SharedPreferences.OnSharedPreferenceChangeListener { _,_ -> refreshLocal() }
     init { store.preferences.registerOnSharedPreferenceChangeListener(listener);schedule() }
     override fun onCleared() { store.preferences.unregisterOnSharedPreferenceChangeListener(listener);super.onCleared() }

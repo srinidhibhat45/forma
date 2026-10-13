@@ -1,0 +1,1 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="com.forma.probe"><uses-sdk android:minSdkVersion="28" android:targetSdkVersion="34"/><application android:label="Forma upgrade probe"/><instrumentation android:name="com.forma.probe.UpgradeProbe" android:targetPackage="com.forma.health"/></manifest>

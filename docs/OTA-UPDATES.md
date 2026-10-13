@@ -38,7 +38,7 @@ cd android
 ./gradlew connectedDebugAndroidTest
 ```
 
-The opt-in `AppUpdateIntegrationTest` downloads the published release and checks its digest and signing identity against the installed build. Run it on a development build older than the published release with the `liveUpdateTest=true` instrumentation argument. `UpdateMigrationTest` writes and reads synthetic private-storage probes across an actual package replacement; enable with `migrationProbe=true` and run the write/read methods on the corresponding sides of the upgrade.
+The opt-in `AppUpdateIntegrationTest` downloads the published release and checks its digest and signing identity against the installed build. Run it on a development build older than the published release with the `liveUpdateTest=true` instrumentation argument. The standalone Java instrumentation in `scripts/upgrade-probe/` writes and reads synthetic private-storage probes across an actual package replacement. It has no dependency on app classes or Kotlin names, so it works with optimized releases. Build it with JDK `javac` and the SDK’s `d8` and `aapt2`, sign it with a certificate trusted by the target, install it on an isolated emulator, and invoke `com.forma.probe/com.forma.probe.UpgradeProbe` with `phase=write` before and `phase=read` after the upgrade. Do not install the test probe on a personal phone.
 
 ## Privacy and failure handling
 
