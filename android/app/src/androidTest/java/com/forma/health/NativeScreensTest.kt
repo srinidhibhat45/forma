@@ -23,6 +23,9 @@ class NativeScreensTest {
         compose.waitForIdle()
         compose.onNodeWithText(heading).assertIsDisplayed()
         compose.waitForIdle()
+        // Compose captureToImage copies the Activity window; separate dialog windows are not reliable here.
+        // Sheet visibility and behavior are asserted below, without exporting a misleading background bitmap.
+        if(sheet.isNotBlank())return
         val folder=InstrumentationRegistry.getArguments().getString("additionalTestOutputDir")?.let(::File) ?: File(app.getExternalFilesDir(null),"screenshots")
         folder.mkdirs()
         File(folder,fileName).outputStream().use{compose.onNode(isRoot() and hasAnyDescendant(hasText(heading))).captureToImage().asAndroidBitmap().compress(Bitmap.CompressFormat.PNG,100,it)}
