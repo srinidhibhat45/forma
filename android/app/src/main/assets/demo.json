@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "source": "Demo · Galaxy Watch6 Classic",
+  "source": "Demo \u00b7 Galaxy Watch6 Classic",
   "days": [
     {
       "date": "2026-09-16",
@@ -16,7 +16,9 @@
       "activeMinutes": 32,
       "activeCalories": 240,
       "distanceKm": 4.2,
-      "floors": 4
+      "floors": 4,
+      "sleepSpo2": 96,
+      "sleepRespiratoryRate": 14.1
     },
     {
       "date": "2026-09-17",
@@ -32,7 +34,9 @@
       "activeMinutes": 33,
       "activeCalories": 247,
       "distanceKm": 4.8,
-      "floors": 5
+      "floors": 5,
+      "sleepSpo2": 97,
+      "sleepRespiratoryRate": 14.299999999999999
     },
     {
       "date": "2026-09-18",
@@ -48,7 +52,9 @@
       "activeMinutes": 34,
       "activeCalories": 254,
       "distanceKm": 5.4,
-      "floors": 6
+      "floors": 6,
+      "sleepSpo2": 98,
+      "sleepRespiratoryRate": 14.5
     },
     {
       "date": "2026-09-19",
@@ -64,7 +70,9 @@
       "activeMinutes": 35,
       "activeCalories": 261,
       "distanceKm": 6,
-      "floors": 7
+      "floors": 7,
+      "sleepSpo2": 96,
+      "sleepRespiratoryRate": 14.7
     },
     {
       "date": "2026-09-20",
@@ -80,7 +88,9 @@
       "activeMinutes": 36,
       "activeCalories": 268,
       "distanceKm": 4.2,
-      "floors": 8
+      "floors": 8,
+      "sleepSpo2": 97,
+      "sleepRespiratoryRate": 14.9
     },
     {
       "date": "2026-09-21",
@@ -96,7 +106,9 @@
       "activeMinutes": 37,
       "activeCalories": 275,
       "distanceKm": 4.8,
-      "floors": 9
+      "floors": 9,
+      "sleepSpo2": 98,
+      "sleepRespiratoryRate": 14.1
     },
     {
       "date": "2026-09-22",
@@ -112,7 +124,9 @@
       "activeMinutes": 38,
       "activeCalories": 282,
       "distanceKm": 5.4,
-      "floors": 10
+      "floors": 10,
+      "sleepSpo2": 96,
+      "sleepRespiratoryRate": 14.299999999999999
     },
     {
       "date": "2026-09-23",
@@ -128,7 +142,9 @@
       "activeMinutes": 39,
       "activeCalories": 289,
       "distanceKm": 6,
-      "floors": 11
+      "floors": 11,
+      "sleepSpo2": 97,
+      "sleepRespiratoryRate": 14.5
     },
     {
       "date": "2026-09-24",
@@ -144,7 +160,9 @@
       "activeMinutes": 40,
       "activeCalories": 296,
       "distanceKm": 4.2,
-      "floors": 4
+      "floors": 4,
+      "sleepSpo2": 98,
+      "sleepRespiratoryRate": 14.7
     },
     {
       "date": "2026-09-25",
@@ -160,7 +178,9 @@
       "activeMinutes": 41,
       "activeCalories": 303,
       "distanceKm": 4.8,
-      "floors": 5
+      "floors": 5,
+      "sleepSpo2": 96,
+      "sleepRespiratoryRate": 14.9
     },
     {
       "date": "2026-09-26",
@@ -176,7 +196,9 @@
       "activeMinutes": 42,
       "activeCalories": 310,
       "distanceKm": 5.4,
-      "floors": 6
+      "floors": 6,
+      "sleepSpo2": 97,
+      "sleepRespiratoryRate": 14.1
     },
     {
       "date": "2026-09-27",
@@ -192,7 +214,9 @@
       "activeMinutes": 43,
       "activeCalories": 317,
       "distanceKm": 6,
-      "floors": 7
+      "floors": 7,
+      "sleepSpo2": 98,
+      "sleepRespiratoryRate": 14.299999999999999
     },
     {
       "date": "2026-09-28",
@@ -208,7 +232,9 @@
       "activeMinutes": 44,
       "activeCalories": 324,
       "distanceKm": 4.2,
-      "floors": 8
+      "floors": 8,
+      "sleepSpo2": 96,
+      "sleepRespiratoryRate": 14.5
     },
     {
       "date": "2026-09-29",
@@ -224,7 +250,9 @@
       "activeMinutes": 45,
       "activeCalories": 331,
       "distanceKm": 4.8,
-      "floors": 9
+      "floors": 9,
+      "sleepSpo2": 97,
+      "sleepRespiratoryRate": 14.7
     },
     {
       "date": "2026-09-30",
@@ -240,7 +268,9 @@
       "activeMinutes": 46,
       "activeCalories": 338,
       "distanceKm": 5.4,
-      "floors": 10
+      "floors": 10,
+      "sleepSpo2": 98,
+      "sleepRespiratoryRate": 14.9
     },
     {
       "date": "2026-10-01",
@@ -256,7 +286,9 @@
       "activeMinutes": 47,
       "activeCalories": 345,
       "distanceKm": 6,
-      "floors": 11
+      "floors": 11,
+      "sleepSpo2": 96,
+      "sleepRespiratoryRate": 14.1
     },
     {
       "date": "2026-10-02",
@@ -272,7 +304,9 @@
       "activeMinutes": 48,
       "activeCalories": 352,
       "distanceKm": 4.2,
-      "floors": 4
+      "floors": 4,
+      "sleepSpo2": 97,
+      "sleepRespiratoryRate": 14.299999999999999
     },
     {
       "date": "2026-10-03",
@@ -288,7 +322,9 @@
       "activeMinutes": 49,
       "activeCalories": 359,
       "distanceKm": 4.8,
-      "floors": 5
+      "floors": 5,
+      "sleepSpo2": 98,
+      "sleepRespiratoryRate": 14.5
     },
     {
       "date": "2026-10-04",
@@ -304,7 +340,9 @@
       "activeMinutes": 50,
       "activeCalories": 366,
       "distanceKm": 5.4,
-      "floors": 6
+      "floors": 6,
+      "sleepSpo2": 96,
+      "sleepRespiratoryRate": 14.7
     },
     {
       "date": "2026-10-05",
@@ -320,7 +358,9 @@
       "activeMinutes": 51,
       "activeCalories": 373,
       "distanceKm": 6,
-      "floors": 7
+      "floors": 7,
+      "sleepSpo2": 97,
+      "sleepRespiratoryRate": 14.9
     },
     {
       "date": "2026-10-06",
@@ -336,7 +376,9 @@
       "activeMinutes": 52,
       "activeCalories": 380,
       "distanceKm": 4.2,
-      "floors": 8
+      "floors": 8,
+      "sleepSpo2": 98,
+      "sleepRespiratoryRate": 14.1
     },
     {
       "date": "2026-10-07",
@@ -352,7 +394,9 @@
       "activeMinutes": 53,
       "activeCalories": 387,
       "distanceKm": 4.8,
-      "floors": 9
+      "floors": 9,
+      "sleepSpo2": 96,
+      "sleepRespiratoryRate": 14.299999999999999
     },
     {
       "date": "2026-10-08",
@@ -368,7 +412,9 @@
       "activeMinutes": 54,
       "activeCalories": 394,
       "distanceKm": 5.4,
-      "floors": 10
+      "floors": 10,
+      "sleepSpo2": 97,
+      "sleepRespiratoryRate": 14.5
     },
     {
       "date": "2026-10-09",
@@ -384,7 +430,9 @@
       "activeMinutes": 55,
       "activeCalories": 401,
       "distanceKm": 6,
-      "floors": 11
+      "floors": 11,
+      "sleepSpo2": 98,
+      "sleepRespiratoryRate": 14.7
     },
     {
       "date": "2026-10-10",
@@ -400,7 +448,9 @@
       "activeMinutes": 56,
       "activeCalories": 408,
       "distanceKm": 4.2,
-      "floors": 4
+      "floors": 4,
+      "sleepSpo2": 96,
+      "sleepRespiratoryRate": 14.9
     },
     {
       "date": "2026-10-11",
@@ -416,7 +466,9 @@
       "activeMinutes": 57,
       "activeCalories": 415,
       "distanceKm": 4.8,
-      "floors": 5
+      "floors": 5,
+      "sleepSpo2": 97,
+      "sleepRespiratoryRate": 14.1
     },
     {
       "date": "2026-10-12",
@@ -432,7 +484,9 @@
       "activeMinutes": 58,
       "activeCalories": 422,
       "distanceKm": 5.4,
-      "floors": 6
+      "floors": 6,
+      "sleepSpo2": 98,
+      "sleepRespiratoryRate": 14.299999999999999
     },
     {
       "date": "2026-10-13",
@@ -557,7 +611,13 @@
           "restMinutes": 15,
           "heartRate": 72
         }
-      ]
+      ],
+      "heartRateLatest": 72,
+      "heartRateAverage": 77.71428571428571,
+      "heartRateMin": 62,
+      "heartRateMax": 105,
+      "sleepSpo2": 98,
+      "sleepRespiratoryRate": 14.6
     }
   ]
 }

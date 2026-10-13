@@ -6,109 +6,255 @@ import androidx.health.connect.client.HealthConnectFeatures
 import androidx.health.connect.client.permission.HealthPermission
 import androidx.health.connect.client.records.*
 import androidx.health.connect.client.records.metadata.DataOrigin
-import androidx.health.connect.client.request.ReadRecordsRequest
-import androidx.health.connect.client.request.AggregateGroupByDurationRequest
+import androidx.health.connect.client.records.metadata.Device
+import androidx.health.connect.client.request.*
 import androidx.health.connect.client.time.TimeRangeFilter
+import kotlinx.coroutines.*
 import java.time.*
 import kotlin.reflect.KClass
-import kotlin.math.max
-import kotlin.math.min
 
-class HealthReader(private val context: Context) {
-    val client by lazy { HealthConnectClient.getOrCreate(context) }
+/** Reads Samsung's shared records, never claims a direct Bluetooth or live sensor connection. */
+data class ChangeCheck(val changed:Boolean,val historyChanged:Boolean=false)
+
+class HealthReader(private val context:Context,private val injectedClient:HealthConnectClient?=null) {
+    val client by lazy { injectedClient ?: HealthConnectClient.getOrCreate(context) }
     private val samsung=setOf(DataOrigin("com.sec.android.app.shealth"))
-    private val zone=ZoneId.systemDefault()
-    val status get()=HealthConnectClient.getSdkStatus(context)
-    fun permissions(): Set<String> {
-        val types=mutableListOf<KClass<out Record>>(StepsRecord::class,DistanceRecord::class,ActiveCaloriesBurnedRecord::class,ExerciseSessionRecord::class,FloorsClimbedRecord::class,HeartRateRecord::class,RestingHeartRateRecord::class,HeartRateVariabilityRmssdRecord::class,SleepSessionRecord::class,OxygenSaturationRecord::class,RespiratoryRateRecord::class,WeightRecord::class,BodyFatRecord::class,LeanBodyMassRecord::class,BloodPressureRecord::class,BloodGlucoseRecord::class)
-        if(status==HealthConnectClient.SDK_AVAILABLE && client.features.getFeatureStatus(HealthConnectFeatures.FEATURE_SKIN_TEMPERATURE)==HealthConnectFeatures.FEATURE_STATUS_AVAILABLE) types.add(SkinTemperatureRecord::class)
-        return types.map { HealthPermission.getReadPermission(it) }.toSet()
+    val status get()=if(injectedClient!=null)HealthConnectClient.SDK_AVAILABLE else HealthConnectClient.getSdkStatus(context)
+    private fun feature(id:Int)=status==HealthConnectClient.SDK_AVAILABLE && client.features.getFeatureStatus(id)==HealthConnectFeatures.FEATURE_STATUS_AVAILABLE
+    private fun recordTypes():List<KClass<out Record>> {
+        val types=mutableListOf<KClass<out Record>>(StepsRecord::class,DistanceRecord::class,ActiveCaloriesBurnedRecord::class,ExerciseSessionRecord::class,FloorsClimbedRecord::class,HeartRateRecord::class,RestingHeartRateRecord::class,HeartRateVariabilityRmssdRecord::class,SleepSessionRecord::class,OxygenSaturationRecord::class,RespiratoryRateRecord::class,WeightRecord::class,BodyFatRecord::class,LeanBodyMassRecord::class,BloodPressureRecord::class,BloodGlucoseRecord::class,TotalCaloriesBurnedRecord::class,Vo2MaxRecord::class,PowerRecord::class,SpeedRecord::class,BasalMetabolicRateRecord::class,HeightRecord::class)
+        if(feature(HealthConnectFeatures.FEATURE_SKIN_TEMPERATURE))types.add(SkinTemperatureRecord::class)
+        return types
     }
-    suspend fun sync(existing: HealthData? = null): HealthData {
-        check(status==HealthConnectClient.SDK_AVAILABLE) { "Health Connect is unavailable. Install or update it on your phone." }
+    fun permissions()=recordTypes().map { HealthPermission.getReadPermission(it) }.toSet()
+    suspend fun changeScope()=client.permissionController.getGrantedPermissions().intersect(connectionPermissions()).sorted().joinToString("|")
+    suspend fun changeToken():String {
         val granted=client.permissionController.getGrantedPermissions()
-        check(granted.any { it in permissions() }) { "Grant Health Connect read access to sync your watch." }
-        val now=Instant.now();val today=LocalDate.now(zone)
-        val first=if(existing!=null && !existing.demo) today.minusDays(2) else today.minusDays(28)
-        val start=first.atStartOfDay(zone).toInstant();val filter=TimeRangeFilter.between(start,now)
+        val types=recordTypes().filter { HealthPermission.getReadPermission(it) in granted }.toSet()
+        check(types.isNotEmpty()) { "Allow read access first." }
+        return client.getChangesToken(ChangesTokenRequest(types,dataOriginFilters=samsung))
+    }
+    /** Do not consume a changed checkpoint until a replacement snapshot finishes successfully. */
+    private fun recordTime(record:Record,now:Instant):Instant?=when(record) { is TotalCaloriesBurnedRecord->record.endTime;is SpeedRecord->record.samples.filter { it.time<=now }.maxOfOrNull { it.time };is PowerRecord->record.samples.filter { it.time<=now }.maxOfOrNull { it.time };is Vo2MaxRecord->record.time;is BasalMetabolicRateRecord->record.time;is HeightRecord->record.time;is SleepSessionRecord->record.endTime;is HeartRateRecord->record.samples.filter { it.time<=now }.maxOfOrNull { it.time };is StepsRecord->record.endTime
+                is DistanceRecord->record.endTime;is ActiveCaloriesBurnedRecord->record.endTime;is FloorsClimbedRecord->record.endTime;is ExerciseSessionRecord->record.endTime;is SkinTemperatureRecord->record.deltas.filter { it.time<=now }.maxOfOrNull { it.time }
+                is RestingHeartRateRecord->record.time;is HeartRateVariabilityRmssdRecord->record.time;is OxygenSaturationRecord->record.time;is RespiratoryRateRecord->record.time;is WeightRecord->record.time;is BodyFatRecord->record.time;is LeanBodyMassRecord->record.time;is BloodPressureRecord->record.time;is BloodGlucoseRecord->record.time;else->null }
+    suspend fun changes(token:String):ChangeCheck {
+        var cursor=token;var changed=false;var history=false
+        val now=Instant.now();val recent=LocalDate.now().minusDays(2).atStartOfDay(ZoneId.systemDefault()).toInstant()
+        repeat(100) {
+            val response=client.getChanges(cursor)
+            if(response.changesTokenExpired)return ChangeCheck(true,true)
+            response.changes.forEach { change->
+                changed=true
+                val record=(change as? androidx.health.connect.client.changes.UpsertionChange)?.record
+                // A deleted record has no timestamp. A full reconciliation removes its cached measurements.
+                val at=when(record) {
+                    is TotalCaloriesBurnedRecord->record.startTime;is PowerRecord->record.startTime;is SpeedRecord->record.startTime;is SleepSessionRecord->record.startTime;is StepsRecord->record.startTime
+                    is HeartRateRecord->record.startTime;is SkinTemperatureRecord->record.startTime
+                    is ExerciseSessionRecord->record.startTime;is DistanceRecord->record.startTime
+                    is ActiveCaloriesBurnedRecord->record.startTime;is FloorsClimbedRecord->record.startTime
+                    else->record?.let { recordTime(it,now) }
+                }
+                if(at==null || at<recent)history=true
+            }
+            if(!response.hasMore)return ChangeCheck(changed,history)
+            check(response.nextChangesToken!=cursor) { "Health Connect change pagination stalled." }
+            cursor=response.nextChangesToken
+        }
+        return ChangeCheck(true,true)
+    }
+    fun connectionPermissions()=permissions()+if(feature(HealthConnectFeatures.FEATURE_READ_HEALTH_DATA_HISTORY))setOf(HealthPermission.PERMISSION_READ_HEALTH_DATA_HISTORY)else emptySet()
+    suspend fun connection():ConnectionState {
+        val available=status==HealthConnectClient.SDK_AVAILABLE
+        val installed=runCatching { context.packageManager.getApplicationInfo("com.sec.android.app.shealth",0).enabled }.getOrDefault(false)
+        val granted=if(available)client.permissionController.getGrantedPermissions()else emptySet()
+        return ConnectionState(available,installed,granted.intersect(connectionPermissions()+HealthPermission.PERMISSION_READ_HEALTH_DATA_IN_BACKGROUND),
+            feature(HealthConnectFeatures.FEATURE_READ_HEALTH_DATA_HISTORY),HealthPermission.PERMISSION_READ_HEALTH_DATA_HISTORY in granted,
+            feature(HealthConnectFeatures.FEATURE_READ_HEALTH_DATA_IN_BACKGROUND),HealthPermission.PERMISSION_READ_HEALTH_DATA_IN_BACKGROUND in granted)
+    }
+    suspend fun sync(existing:HealthData?=null,fullHistory:Boolean=false,onProgress:(SyncProgress)->Unit={},onData:suspend(HealthData)->Unit={}):HealthData {
+        check(status==HealthConnectClient.SDK_AVAILABLE) { "Install or update Health Connect to read Samsung Health records." }
+        val granted=client.permissionController.getGrantedPermissions().intersect(connectionPermissions())
+        check(granted.any { it in permissions() }) { "Allow Forma to read the measurements you want to use." }
+        val zone=ZoneId.systemDefault();val now=Instant.now();val today=now.atZone(zone).toLocalDate()
+        val original=existing?.takeIf { !it.demo && it.source=="Samsung Health · Health Connect" }
+        val history=feature(HealthConnectFeatures.FEATURE_READ_HEALTH_DATA_HISTORY) && HealthPermission.PERMISSION_READ_HEALTH_DATA_HISTORY in granted
+        val target=today.minusDays(if(history)364 else 28)
+        val first=today.minusDays(2)
+        val catchupFrom=HealthQuality.recentStart(today,original?.syncedAt,zone).coerceAtLeast(target)
+        val previous=original?.report
+        val reset=fullHistory || previous?.granted!=granted || previous?.historyAllowed!=history
+        var data=original ?: HealthData("Samsung Health · Health Connect",emptyList())
+        var cursor=if(reset)first else minOf(previous?.scannedFrom ?: first,first)
+        var catchingUp=catchupFrom<first
+        var report=SyncReport(granted,history,cursor,false,devices=previous?.devices.orEmpty())
+        suspend fun publish(batch:Batch,start:LocalDate,end:LocalDate,scanned:LocalDate) {
+            report=report.copy(scannedFrom=scanned,historyComplete=scanned<=target && !catchingUp,
+                latestRecordAt=listOfNotNull(report.latestRecordAt,batch.latest).maxOrNull(),
+                devices=(report.devices+batch.devices).distinct().take(12),issues=(report.issues+batch.issues).distinct().take(12))
+            data=HealthData("Samsung Health · Health Connect",HealthQuality.merge(data.days,batch.days,start,end),Instant.now(),report=report)
+            if(data.days.isNotEmpty())onData(data)
+        }
+        onProgress(SyncProgress("Reading recent Samsung Health records",0,if(history)365 else 29))
+        publish(readRange(first,today,now,zone,granted),first,today,cursor)
+        var gap=first
+        while(gap>catchupFrom) {
+            val start=maxOf(catchupFrom,gap.minusDays(14));val end=gap.minusDays(1)
+            onProgress(SyncProgress("Catching up missed days · $start to $end"))
+            publish(readRange(start,end,now,zone,granted),start,end,cursor);gap=start;delay(250)
+        }
+        catchingUp=false
+        // Recent data is already visible. Backfill is bounded and resumable at each completed batch.
+        while(cursor>target) {
+            currentCoroutineContext().ensureActive()
+            val start=maxOf(target,cursor.minusDays(14));val end=cursor.minusDays(1)
+            onProgress(SyncProgress("Importing history · ${start} to ${end}",java.time.temporal.ChronoUnit.DAYS.between(cursor,today).toInt()+1,if(history)365 else 29))
+            val batch=readRange(start,end,now,zone,granted)
+            cursor=start;publish(batch,start,end,cursor);delay(250)
+        }
+        report=report.copy(historyComplete=true);data=data.copy(report=report);if(data.days.isNotEmpty())onData(data)
+        check(data.days.isNotEmpty()) { "Samsung Health hasn’t shared records yet. Open Samsung Health, sync the watch, and enable sharing in its Health Connect settings." }
+        onProgress(SyncProgress("Records ready",if(history)365 else 29,if(history)365 else 29))
+        return data
+    }
+    private data class Batch(val days:List<HealthDay>,val latest:Instant?,val devices:List<String>,val issues:List<String>)
+    private suspend fun readRange(first:LocalDate,last:LocalDate,now:Instant,zone:ZoneId,granted:Set<String>):Batch {
+        val start=first.atStartOfDay(zone).toInstant();val finish=minOf(last.plusDays(1).atStartOfDay(zone).toInstant(),now)
+        val filter=TimeRangeFilter.between(start,finish)
+        val rawFilter=TimeRangeFilter.between(first.minusDays(1).atStartOfDay(zone).toInstant(),finish)
+        var latest:Instant?=null;val devices=mutableSetOf<String>();val issues=mutableSetOf<String>()
+        fun observe(record:Record) {
+            val at=recordTime(record,now)
+            at?.takeIf { it<=now }?.let { latest=maxOf(latest ?: it,it) }
+            record.metadata.device?.takeIf { it.type==Device.TYPE_WATCH }?.let { d->devices.add(listOfNotNull(d.manufacturer,d.model).joinToString(" ").ifBlank { "Watch device reported" }.take(100)) }
+        }
         suspend fun <T:Record> records(type:KClass<T>):List<T> {
             if(HealthPermission.getReadPermission(type) !in granted)return emptyList()
-            val result=mutableListOf<T>();var token:String?=null
-            do { val page=client.readRecords(ReadRecordsRequest(type,filter,dataOriginFilter=samsung,pageSize=1000,pageToken=token));result.addAll(page.records);token=page.pageToken } while(token!=null)
-            return result
+            val result=mutableListOf<T>();var token:String?=null;val tokens=mutableSetOf<String>()
+            do {
+                currentCoroutineContext().ensureActive()
+                val page=client.readRecords(ReadRecordsRequest(type,rawFilter,dataOriginFilter=samsung,pageSize=500,pageToken=token))
+                page.records.forEach(::observe);result.addAll(page.records)
+                token=page.pageToken?.takeIf { it.isNotBlank() }
+                check(token==null || tokens.add(token!!)) { "Health Connect returned a repeated page. Retry sync." }
+            } while(token!=null)
+            // Provider IDs identify revisions; keep newest copy. Empty IDs must never collapse records.
+            return result.filter { it.metadata.id.isBlank() }+result.filter { it.metadata.id.isNotBlank() }.groupBy { it.metadata.id }.values.map { copies->copies.maxBy { it.metadata.lastModifiedTime } }
         }
+        val sleeps=records(SleepSessionRecord::class).filter { it.endTime<=now && Duration.between(it.startTime,it.endTime)<=Duration.ofDays(1) }
+            .groupBy { it.startTime to it.endTime }.values.map { copies->copies.maxBy { it.metadata.lastModifiedTime } }
+        val exercises=records(ExerciseSessionRecord::class)
+        val rhr=records(RestingHeartRateRecord::class);val hrv=records(HeartRateVariabilityRmssdRecord::class)
+        val oxygen=records(OxygenSaturationRecord::class);val breathing=records(RespiratoryRateRecord::class)
+        val weight=records(WeightRecord::class);val fat=records(BodyFatRecord::class);val lean=records(LeanBodyMassRecord::class)
+        val bp=records(BloodPressureRecord::class);val glucose=records(BloodGlucoseRecord::class)
+        val vo2=records(Vo2MaxRecord::class);val basal=records(BasalMetabolicRateRecord::class);val height=records(HeightRecord::class)
+        val skin=if(feature(HealthConnectFeatures.FEATURE_SKIN_TEMPERATURE))records(SkinTemperatureRecord::class)else emptyList()
         val metrics=buildSet {
+            if(HealthPermission.getReadPermission(TotalCaloriesBurnedRecord::class) in granted)add(TotalCaloriesBurnedRecord.ENERGY_TOTAL)
+            if(HealthPermission.getReadPermission(SpeedRecord::class) in granted){add(SpeedRecord.SPEED_AVG);add(SpeedRecord.SPEED_MAX)}
+            if(HealthPermission.getReadPermission(PowerRecord::class) in granted){add(PowerRecord.POWER_AVG);add(PowerRecord.POWER_MAX)}
             if(HealthPermission.getReadPermission(StepsRecord::class) in granted)add(StepsRecord.COUNT_TOTAL)
             if(HealthPermission.getReadPermission(DistanceRecord::class) in granted)add(DistanceRecord.DISTANCE_TOTAL)
             if(HealthPermission.getReadPermission(ActiveCaloriesBurnedRecord::class) in granted)add(ActiveCaloriesBurnedRecord.ACTIVE_CALORIES_TOTAL)
             if(HealthPermission.getReadPermission(FloorsClimbedRecord::class) in granted)add(FloorsClimbedRecord.FLOORS_CLIMBED_TOTAL)
+            if(HealthPermission.getReadPermission(HeartRateRecord::class) in granted)add(HeartRateRecord.BPM_AVG)
         }
-        val buckets=if(metrics.isEmpty())emptyList() else client.aggregateGroupByDuration(AggregateGroupByDurationRequest(metrics,filter,Duration.ofHours(1),dataOriginFilter=samsung))
-        val sleeps=records(SleepSessionRecord::class)
-        val hr=records(HeartRateRecord::class).flatMap { it.samples }
-        val rhr=records(RestingHeartRateRecord::class)
-        val hrv=records(HeartRateVariabilityRmssdRecord::class)
-        val oxygen=records(OxygenSaturationRecord::class)
-        val breath=records(RespiratoryRateRecord::class)
-        val exercises=records(ExerciseSessionRecord::class)
-        val weight=records(WeightRecord::class);val fat=records(BodyFatRecord::class);val lean=records(LeanBodyMassRecord::class)
-        val bp=records(BloodPressureRecord::class);val glucose=records(BloodGlucoseRecord::class)
-        val skin=if(HealthPermission.getReadPermission(SkinTemperatureRecord::class) in granted)records(SkinTemperatureRecord::class) else emptyList()
+        val hours=if(metrics.isEmpty())emptyList()else client.aggregateGroupByDuration(AggregateGroupByDurationRequest(metrics,filter,Duration.ofHours(1),dataOriginFilter=samsung))
+        // Civil-day buckets respect the user's local timezone and 23/25-hour DST days.
+        val daily=if(metrics.isEmpty())emptyList()else client.aggregateGroupByPeriod(AggregateGroupByPeriodRequest(metrics,
+            TimeRangeFilter.between(first.atStartOfDay(),finish.atZone(zone).toLocalDateTime()),Period.ofDays(1),dataOriginFilter=samsung))
+        // Aggregate endpoints are query boundaries, not measurement timestamps. Read the actual latest step record.
+        if(HealthPermission.getReadPermission(StepsRecord::class) in granted)client.readRecords(ReadRecordsRequest(StepsRecord::class,filter,dataOriginFilter=samsung,ascendingOrder=false,pageSize=1)).records.forEach(::observe)
+        for(type in listOf(TotalCaloriesBurnedRecord::class,SpeedRecord::class,PowerRecord::class))if(HealthPermission.getReadPermission(type) in granted)client.readRecords(ReadRecordsRequest(type,filter,dataOriginFilter=samsung,ascendingOrder=false,pageSize=1)).records.forEach(::observe)
+        fun summary(n:SleepSessionRecord)=HealthQuality.sleep(n.startTime,n.endTime,n.stages.map { s->TimedStage(s.startTime,s.endTime,when(s.stage) {
+                SleepSessionRecord.STAGE_TYPE_AWAKE,SleepSessionRecord.STAGE_TYPE_AWAKE_IN_BED,SleepSessionRecord.STAGE_TYPE_OUT_OF_BED->"Awake"
+                SleepSessionRecord.STAGE_TYPE_REM->"REM";SleepSessionRecord.STAGE_TYPE_LIGHT->"Light";SleepSessionRecord.STAGE_TYPE_DEEP->"Deep"
+                SleepSessionRecord.STAGE_TYPE_SLEEPING->"Asleep";else->"Unknown"
+            }) })
+        val summaries=sleeps.associateWith(::summary)
+        val primaryNights=sleeps.groupBy { it.endTime.atZone(zone).toLocalDate() }.values.map { nights->nights.maxBy { Duration.between(it.startTime,it.endTime) } }
+        val sleepingIntervals=primaryNights.map { summaries.getValue(it) }.flatMap { s->s.intervals.filter { it.name in setOf("Asleep","Light","Deep","REM") }.map { it.start to it.end } }
+        // Stream heart pages into minute bins only inside sleep intervals: bounded memory even with high-frequency HR.
+        val sleepHeart=mutableMapOf<Long,Pair<Long,Int>>()
+        val latestHeart=mutableMapOf<LocalDate,HeartPoint>();val heartRange=mutableMapOf<LocalDate,Pair<Double,Double>>()
+        if(HealthPermission.getReadPermission(HeartRateRecord::class) in granted) {
+            var token:String?=null;val tokens=mutableSetOf<String>()
+            do {
+                currentCoroutineContext().ensureActive()
+                val page=client.readRecords(ReadRecordsRequest(HeartRateRecord::class,rawFilter,dataOriginFilter=samsung,pageSize=100,pageToken=token))
+                page.records.forEach { record->
+                    observe(record)
+                    record.samples.filter { it.time<=now && it.beatsPerMinute in 20..240 }.forEach { sample->
+                        val date=sample.time.atZone(zone).toLocalDate();val bpm=sample.beatsPerMinute.toDouble()
+                        if(date in first..last) {
+                            if(latestHeart[date]?.at?.let { it<sample.time }!=false)latestHeart[date]=HeartPoint(sample.time,bpm)
+                            val range=heartRange[date];heartRange[date]=minOf(range?.first ?: bpm,bpm) to maxOf(range?.second ?: bpm,bpm)
+                        }
+                        if(sleepingIntervals.any { sample.time>=it.first && sample.time<it.second }) {
+                            val minute=sample.time.epochSecond/60;val old=sleepHeart[minute] ?: (0L to 0)
+                            sleepHeart[minute]=(old.first+sample.beatsPerMinute) to (old.second+1)
+                        }
+                    }
+                }
+                token=page.pageToken?.takeIf { it.isNotBlank() };check(token==null || tokens.add(token!!)) { "Heart data pagination stalled. Retry sync." }
+            } while(token!=null)
+        }
+        val exerciseIntervals=exercises.map { it.startTime to it.endTime }
         fun Instant.date()=atZone(zone).toLocalDate()
-        fun activeMinutes(a:Instant,b:Instant):Double {
-            // Union recorded exercise intervals so overlapping sessions cannot double-count minutes.
-            val intervals=exercises.mapNotNull { e -> val s=max(a.toEpochMilli(),e.startTime.toEpochMilli());val end=min(b.toEpochMilli(),e.endTime.toEpochMilli());if(end>s)s to end else null }.sortedBy{it.first}
-            var total=0L;var end=Long.MIN_VALUE
-            for((s,e) in intervals){total+=(e-max(s,end)).coerceAtLeast(0);end=max(end,e)}
-            return total/60000.0
-        }
-        val days=generateSequence(first){it.plusDays(1)}.takeWhile{it<=today}.map { date ->
-            val values=mutableMapOf<String,Double>();val daily=buckets.filter{it.startTime.date()==date}
-            fun sum(key:String,measurements:List<Double>){if(measurements.isNotEmpty())values[key]=measurements.sum()}
-            sum("steps",daily.mapNotNull{it.result[StepsRecord.COUNT_TOTAL]?.toDouble()})
-            sum("distanceKm",daily.mapNotNull{it.result[DistanceRecord.DISTANCE_TOTAL]?.inKilometers})
-            sum("activeCalories",daily.mapNotNull{it.result[ActiveCaloriesBurnedRecord.ACTIVE_CALORIES_TOTAL]?.inKilocalories})
-            sum("floors",daily.mapNotNull{it.result[FloorsClimbedRecord.FLOORS_CLIMBED_TOTAL]})
-            fun average(key:String,measurements:List<Double>){if(measurements.isNotEmpty())values[key]=measurements.average()}
-            average("restingHeartRate",rhr.filter{it.time.date()==date}.map{it.beatsPerMinute.toDouble()})
-            average("hrv",hrv.filter{it.time.date()==date}.map{it.heartRateVariabilityMillis})
-            average("spo2",oxygen.filter{it.time.date()==date}.map{it.percentage.value})
-            average("respiratoryRate",breath.filter{it.time.date()==date}.map{it.rate})
-            weight.filter{it.time.date()==date}.maxByOrNull{it.time}?.let{values["weightKg"]=it.weight.inKilograms}
-            fat.filter{it.time.date()==date}.maxByOrNull{it.time}?.let{values["bodyFat"]=it.percentage.value}
-            lean.filter{it.time.date()==date}.maxByOrNull{it.time}?.let{values["leanMassKg"]=it.mass.inKilograms}
-            bp.filter{it.time.date()==date}.maxByOrNull{it.time}?.let{values["systolic"]=it.systolic.inMillimetersOfMercury;values["diastolic"]=it.diastolic.inMillimetersOfMercury}
-            glucose.filter{it.time.date()==date}.maxByOrNull{it.time}?.let{values["bloodGlucose"]=it.level.inMillimolesPerLiter}
-            average("skinTemperature",skin.filter{it.endTime.date()==date}.mapNotNull{it.baseline?.inCelsius})
-            val night=sleeps.filter{it.endTime.date()==date}.maxByOrNull{Duration.between(it.startTime,it.endTime).toMinutes()}
-            val sleepingTypes=setOf(SleepSessionRecord.STAGE_TYPE_SLEEPING,SleepSessionRecord.STAGE_TYPE_LIGHT,SleepSessionRecord.STAGE_TYPE_DEEP,SleepSessionRecord.STAGE_TYPE_REM)
-            night?.let { n ->
-                val sleepingHr=hr.filter{sample -> n.stages.any{sample.time>=it.startTime && sample.time<it.endTime && it.stage in sleepingTypes}}.map{it.beatsPerMinute.toDouble()}
-                if(sleepingHr.isNotEmpty())values["sleepHeartRate"]=sleepingHr.average()
-                val napMinutes=sleeps.filter{it.endTime.date()==date && it!=n}.sumOf{session->session.stages.filter{it.stage in sleepingTypes}.sumOf{Duration.between(it.startTime,it.endTime).toMillis()/60000.0}}
+        val days=generateSequence(first) { it.plusDays(1) }.takeWhile { it<=last }.map { date->
+            val values=mutableMapOf<String,Double>()
+            latestHeart[date]?.let { values["heartRateLatest"]=it.bpm }
+            heartRange[date]?.let { values["heartRateMin"]=it.first;values["heartRateMax"]=it.second }
+            val heartTimeline=hours.filter { it.startTime.atZone(zone).toLocalDate()==date }.mapNotNull { h->h.result[HeartRateRecord.BPM_AVG]?.toDouble()?.takeIf { HealthJson.validMeasurement("heartRateAverage",it) }?.let { HeartPoint(h.startTime,it) } }
+            val bucket=daily.find { it.startTime.toLocalDate()==date }
+            bucket?.result?.let { a->a[StepsRecord.COUNT_TOTAL]?.let { values["steps"]=it.toDouble() };a[DistanceRecord.DISTANCE_TOTAL]?.let { values["distanceKm"]=it.inKilometers };a[ActiveCaloriesBurnedRecord.ACTIVE_CALORIES_TOTAL]?.let { values["activeCalories"]=it.inKilocalories };a[FloorsClimbedRecord.FLOORS_CLIMBED_TOTAL]?.let { values["floors"]=it };a[HeartRateRecord.BPM_AVG]?.let { values["heartRateAverage"]=it.toDouble() }
+                a[TotalCaloriesBurnedRecord.ENERGY_TOTAL]?.let { values["totalCalories"]=it.inKilocalories }
+                a[SpeedRecord.SPEED_AVG]?.let { values["speedKmh"]=it.inKilometersPerHour };a[SpeedRecord.SPEED_MAX]?.let { values["maxSpeedKmh"]=it.inKilometersPerHour }
+                a[PowerRecord.POWER_AVG]?.let { values["powerWatts"]=it.inWatts };a[PowerRecord.POWER_MAX]?.let { values["maxPowerWatts"]=it.inWatts } }
+            vo2.filter { it.time.date()==date }.maxByOrNull { it.time }?.let { values["vo2Max"]=it.vo2MillilitersPerMinuteKilogram }
+            basal.filter { it.time.date()==date }.maxByOrNull { it.time }?.let { values["basalMetabolicRate"]=it.basalMetabolicRate.inKilocaloriesPerDay }
+            height.filter { it.time.date()==date }.maxByOrNull { it.time }?.let { values["heightCm"]=it.height.inMeters*100 }
+            fun median(key:String,numbers:List<Double>) { HealthQuality.median(numbers)?.let { values[key]=it } }
+            median("restingHeartRate",rhr.filter { it.time.date()==date }.map { it.beatsPerMinute.toDouble() })
+            median("hrv",hrv.filter { it.time.date()==date }.map { it.heartRateVariabilityMillis })
+            median("spo2",oxygen.filter { it.time.date()==date }.map { it.percentage.value })
+            median("respiratoryRate",breathing.filter { it.time.date()==date }.map { it.rate })
+            weight.filter { it.time.date()==date }.maxByOrNull { it.time }?.let { values["weightKg"]=it.weight.inKilograms }
+            fat.filter { it.time.date()==date }.maxByOrNull { it.time }?.let { values["bodyFat"]=it.percentage.value }
+            lean.filter { it.time.date()==date }.maxByOrNull { it.time }?.let { values["leanMassKg"]=it.mass.inKilograms }
+            bp.filter { it.time.date()==date }.maxByOrNull { it.time }?.let { values["systolic"]=it.systolic.inMillimetersOfMercury;values["diastolic"]=it.diastolic.inMillimetersOfMercury }
+            glucose.filter { it.time.date()==date }.maxByOrNull { it.time }?.let { values["bloodGlucose"]=it.level.inMillimolesPerLiter }
+            val temperature=skin.flatMap { r->r.deltas.filter { it.time<=now }.map { it.time to (it.delta.inCelsius to r.baseline?.inCelsius) } }.filter { it.first.date()==date }
+            median("skinTemperatureDelta",temperature.map { it.second.first })
+            median("skinTemperature",temperature.mapNotNull { (_,p)->p.second?.let { it+p.first } })
+            val night=sleeps.filter { it.endTime.date()==date }.maxByOrNull { Duration.between(it.startTime,it.endTime) }
+
+            val sleep=night?.let { summaries[it] }
+            if(night!=null && sleep!=null) {
+                if(sleep.coverage>0)values["sleepMinutes"]=sleep.asleepMinutes
+                values["sleepCoverage"]=sleep.coverage;sleep.efficiency?.let { values["sleepEfficiency"]=it }
+                if(sleep.coverage<95)issues.add("Some sleep intervals have unknown stages; sleep estimates may be unavailable.")
+                median("sleepSpo2",oxygen.filter { it.time>=night.startTime && it.time<night.endTime }.map { it.percentage.value })
+                median("sleepRespiratoryRate",breathing.filter { it.time>=night.startTime && it.time<night.endTime }.map { it.rate })
+                val minutes=sleepHeart.filter { (minute,_)->val time=Instant.ofEpochSecond(minute*60);time>=night.startTime && time<night.endTime }
+                // At least 12 independently observed minutes spanning half the night, rather than one noisy sample.
+                if(minutes.size>=12 && Duration.ofMinutes((minutes.keys.maxOrNull()!!-minutes.keys.minOrNull()!!))>=Duration.between(night.startTime,night.endTime).dividedBy(2))median("sleepHeartRate",minutes.values.map { it.first.toDouble()/it.second })
+                val naps=sleeps.filter { it.endTime.date()==date && it!=night }.flatMap { s->summaries[s]!!.intervals.filter { it.name in setOf("Asleep","Light","Deep","REM") }.flatMap { listOf(it.start to minOf(it.end,night.startTime),maxOf(it.start,night.endTime) to it.end) } }
+                val napMinutes=HealthQuality.unionMinutes(naps, date.atStartOfDay(zone).toInstant(),date.plusDays(1).atStartOfDay(zone).toInstant())
                 if(napMinutes>0)values["napMinutes"]=napMinutes
             }
-            val stages=night?.stages?.mapNotNull { s -> val name=when(s.stage){SleepSessionRecord.STAGE_TYPE_AWAKE,SleepSessionRecord.STAGE_TYPE_AWAKE_IN_BED,SleepSessionRecord.STAGE_TYPE_OUT_OF_BED -> "Awake";SleepSessionRecord.STAGE_TYPE_REM -> "REM";SleepSessionRecord.STAGE_TYPE_LIGHT -> "Light";SleepSessionRecord.STAGE_TYPE_DEEP -> "Deep";else->null};name?.let{SleepStage(it,Duration.between(s.startTime,s.endTime).toMillis()/60000.0)} } ?: emptyList()
-            night?.let { n ->
-                val known=n.stages.filter{it.stage in setOf(SleepSessionRecord.STAGE_TYPE_SLEEPING,SleepSessionRecord.STAGE_TYPE_LIGHT,SleepSessionRecord.STAGE_TYPE_DEEP,SleepSessionRecord.STAGE_TYPE_REM)}.sumOf{Duration.between(it.startTime,it.endTime).toMillis()/60000.0}
-                // Unknown stages and empty stage arrays do not silently become time asleep.
-                if(known>0)values["sleepMinutes"]=known
-                val session=Duration.between(n.startTime,n.endTime).toMillis()/60000.0
-                if(known>0 && session>0)values["sleepEfficiency"]=(known/session*100).coerceIn(0.0,100.0)
-            }
             val a=date.atStartOfDay(zone).toInstant();val b=minOf(date.plusDays(1).atStartOfDay(zone).toInstant(),now)
-            if(exercises.any{it.startTime<b && it.endTime>a})values["activeMinutes"]=activeMinutes(a,b)
-            val wake=night?.endTime ?: a
-            val samples=daily.filter{it.endTime>wake && it.endTime<=now && it.endTime>wake}.mapNotNull { bucket ->
-                val heart=hr.filter{it.time>=bucket.startTime && it.time<bucket.endTime}.map{it.beatsPerMinute.toDouble()}.takeIf{it.isNotEmpty()}?.average()
-                val steps=bucket.result[StepsRecord.COUNT_TOTAL]?.toDouble()
-                val minutes=activeMinutes(maxOf(wake,bucket.startTime),bucket.endTime)
-                if(steps==null && heart==null && minutes==0.0)null else EnergySample(bucket.endTime.atZone(zone).let{it.hour+it.minute/60.0}.takeIf{it>0} ?:24.0,steps,minutes.takeIf{it>0},heartRate=heart)
+            if(exerciseIntervals.any { it.first<b && it.second>a })values["activeMinutes"]=HealthQuality.unionMinutes(exerciseIntervals,a,b)
+            val wake=night?.endTime
+            val samples=if(wake==null)emptyList()else hours.filter { it.startTime>=wake && it.startTime.date()==date && it.endTime<=now }.mapNotNull { h->
+                val steps=h.result[StepsRecord.COUNT_TOTAL]?.toDouble();val heart=h.result[HeartRateRecord.BPM_AVG]?.toDouble()
+                val minutes=HealthQuality.unionMinutes(exerciseIntervals,h.startTime,h.endTime)
+                if(steps==null && heart==null && minutes==0.0)null else EnergySample(Duration.between(a,h.endTime).toMillis()/3600000.0,steps,minutes.takeIf { it>0 },heartRate=heart,durationMinutes=Duration.between(h.startTime,h.endTime).toMillis()/60000.0,recordedAt=h.endTime)
             }
-            HealthDay(date,values,stages,samples,night?.startTime,night?.endTime)
-        }.filter{it.values.isNotEmpty()||it.samples.isNotEmpty()}.toList()
-        val merged=(existing?.takeUnless{it.demo}?.days.orEmpty().filter{it.date<first}+days).sortedBy{it.date}.takeLast(365)
-        check(merged.isNotEmpty()) { "No Samsung Health records were shared. Check Samsung Health → Settings → Health Connect, then sync your watch." }
-        return HealthData("Samsung Health · Health Connect",merged,now)
+            val valid=values.filter { (key,value)->HealthJson.validMeasurement(key,value).also { if(!it)issues.add("Some $key records were outside the supported measurement range.") } }
+            HealthDay(date,valid,sleep?.stages.orEmpty(),samples,night?.startTime,night?.endTime,latestHeart[date]?.at,heartTimeline)
+        }.filter { it.values.isNotEmpty() || it.samples.isNotEmpty() || it.sleepStart!=null }.toList()
+        return Batch(days,latest,devices.toList(),issues.toList())
     }
 }

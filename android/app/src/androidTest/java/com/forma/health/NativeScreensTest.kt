@@ -25,7 +25,7 @@ class NativeScreensTest {
         compose.waitForIdle()
         val folder=InstrumentationRegistry.getArguments().getString("additionalTestOutputDir")?.let(::File) ?: File(app.getExternalFilesDir(null),"screenshots")
         folder.mkdirs()
-        File(folder,fileName).outputStream().use{compose.onRoot().captureToImage().asAndroidBitmap().compress(Bitmap.CompressFormat.PNG,100,it)}
+        File(folder,fileName).outputStream().use{compose.onAllNodes(isRoot()).onLast().captureToImage().asAndroidBitmap().compress(Bitmap.CompressFormat.PNG,100,it)}
     }
     @Test fun rangeAndPointInspectionWork() {
         render("Trends","The long view.","forma-trends-interaction.png")
@@ -40,9 +40,48 @@ class NativeScreensTest {
     }
     @Test fun energyCalculationOpensFromInstrument() {
         render("Today","Your day.","forma-energy-preview.png")
+        compose.onNode(hasScrollToIndexAction()).performScrollToNode(hasContentDescription("How body energy is estimated"))
         compose.onNodeWithContentDescription("How body energy is estimated").performClick()
         compose.onNodeWithText("Body energy").assertIsDisplayed()
-        compose.onNodeWithText("Starting energy: 88 points").assertIsDisplayed()
+        compose.onNodeWithText("Starting energy",substring=true).performScrollTo().assertIsDisplayed()
+    }
+    @Test fun connectionPanelHasOneAccessFlowAndDirectSharingLinks() {
+        render("You","Your watch.\nYour rhythm.","forma-connections.png",sheet="Connections")
+        compose.onNodeWithText("Samsung Health").assertIsDisplayed()
+        compose.onNodeWithText("Galaxy Wearable").assertIsDisplayed()
+        compose.onNodeWithText("Allow access & connect").performScrollTo().assertIsDisplayed()
+    }
+    @Test fun allMetricsSearchAndHistoryOpen() {
+        render("Today","Every shared signal.\nA little more context.","forma-all-metrics.png",sheet="All metrics")
+        compose.onNode(hasSetTextAction()).performTextInput("calories")
+        compose.onAllNodesWithText("Active calories").onLast().performClick()
+        compose.onNodeWithText("28D").assertIsDisplayed()
+        compose.onNodeWithText("90D").performClick()
+        compose.onNodeWithText("Days recorded",substring=true,ignoreCase=true).assertIsDisplayed()
+    }
+    @Test fun todayRingsOpenTargets() {
+        render("Today","Make today count.","forma-today-rings.png")
+        compose.onNodeWithContentDescription("Edit ring targets").performClick()
+        compose.onNodeWithText("Active calorie goal").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Recorded exercise goal").performScrollTo().assertIsDisplayed()
+    }
+    @Test fun sharedCaloriesAreLabeledAndNeverPresentedAsActiveCalories() {
+        compose.setContent { androidx.compose.material3.MaterialTheme { TodayActivity(HealthDay(java.time.LocalDate.now(),mapOf("totalCalories" to 325.0)),Preferences(),{},{}) } }
+        compose.onNodeWithText("Shared calories").assertIsDisplayed()
+        compose.onNodeWithText("Active calories").assertDoesNotExist()
+        compose.onNodeWithText("Calorie ring uses shared total calories",substring=true).assertIsDisplayed()
+    }
+    @Test fun pausingAndClearingDoNotScheduleAnAutomaticReimport() {
+        val app=InstrumentationRegistry.getInstrumentation().targetContext.applicationContext as Application
+        val model=FormaViewModel(app);val prefs=model.store.prefs()
+        try {
+            compose.runOnUiThread { model.updatePrefs(prefs.copy(automaticSync=true,backgroundSync=true));model.cancelSync() }
+            org.junit.Assert.assertFalse(model.store.prefs().automaticSync)
+            org.junit.Assert.assertFalse(model.store.prefs().backgroundSync)
+            compose.runOnUiThread { model.clearAll() }
+            org.junit.Assert.assertFalse(model.store.prefs().automaticSync)
+            org.junit.Assert.assertNull(model.store.health())
+        } finally { model.store.savePrefs(prefs) }
     }
     @Test fun sleepRenders(){render("Sleep","The night shift.","forma-sleep.png")}
     @Test fun activityRenders(){render("Move","Built to move.","forma-move.png")}

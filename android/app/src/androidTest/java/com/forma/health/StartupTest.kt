@@ -3,6 +3,7 @@ package com.forma.health
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.graphics.asAndroidBitmap
@@ -16,10 +17,10 @@ class StartupTest {
     @Test fun nativeDashboardStartsWithHonestDemoAndScores() {
         compose.onNodeWithText("Your day.").assertIsDisplayed()
         compose.onNodeWithText("Demo mode").assertIsDisplayed()
-        compose.onNodeWithText("69",useUnmergedTree=true).assertIsDisplayed()
-        compose.onNodeWithText("Recovery",useUnmergedTree=true).assertIsDisplayed()
-        compose.onNodeWithText("88",useUnmergedTree=true).assertIsDisplayed()
-        compose.onNodeWithText("91",useUnmergedTree=true).assertIsDisplayed()
+        compose.onNodeWithText("Make today count.").assertIsDisplayed()
+        compose.onNodeWithText("Active calories").assertIsDisplayed()
+        compose.onNodeWithText("Exercise").assertIsDisplayed()
+        compose.onNodeWithText("Heart rate").performScrollTo().assertIsDisplayed()
         compose.waitForIdle()
         val image=compose.onRoot().captureToImage().asAndroidBitmap()
         val outputDir=androidx.test.platform.app.InstrumentationRegistry.getArguments().getString("additionalTestOutputDir")

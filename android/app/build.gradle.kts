@@ -11,7 +11,7 @@ android {
         minSdk = 28
         targetSdk = 36
         versionCode = providers.gradleProperty("formaVersionCode").getOrElse("3").toInt()
-        versionName = providers.gradleProperty("formaVersionName").getOrElse("1.2.0")
+        versionName = providers.gradleProperty("formaVersionName").getOrElse("1.3.0")
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
     buildFeatures { compose = true; buildConfig = true }

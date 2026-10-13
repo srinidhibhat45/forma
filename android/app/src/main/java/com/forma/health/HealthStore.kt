@@ -13,19 +13,27 @@ import org.json.*
 import java.time.*
 import java.util.UUID
 import java.util.concurrent.TimeUnit
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import java.util.concurrent.atomic.AtomicInteger
 
 class HealthStore(private val context: Context) {
     private val storage=context.getSharedPreferences("forma_private",Context.MODE_PRIVATE)
     fun health():HealthData?=storage.getString("health",null)?.let{runCatching{HealthJson.decode(it)}.getOrNull()}
     fun saveHealth(data:HealthData){storage.edit().putString("health",HealthJson.encode(data)).apply()}
-    fun clearHealth(){storage.edit().remove("health").apply()}
+    fun clearHealth(){storage.edit().remove("health").remove("changesToken").remove("changesScope").apply()}
+    fun checkpoint():Pair<String,String>? {
+        val token=storage.getString("changesToken",null) ?: return null
+        return token to storage.getString("changesScope","").orEmpty()
+    }
+    fun saveCheckpoint(token:String,scope:String){storage.edit().putString("changesToken",token).putString("changesScope",scope).apply()}
     fun demo():HealthData {
         val d=HealthJson.decode(context.assets.open("demo.json").bufferedReader().use{it.readText()},true)
         val delta=java.time.temporal.ChronoUnit.DAYS.between(d.days.last().date,LocalDate.now())
         return d.copy(days=d.days.map{it.copy(date=it.date.plusDays(delta))})
     }
-    fun prefs():Preferences=runCatching{val p=JSONObject(storage.getString("prefs","{}")!!);Preferences(p.optString("name","Your"),p.optInt("sleepGoal",480),p.optInt("stepGoal",10000),p.optInt("waterGoal",2500),p.optString("bedtime","23:00"),p.optBoolean("backgroundSync",false))}.getOrDefault(Preferences())
-    fun savePrefs(p:Preferences){storage.edit().putString("prefs",JSONObject().put("name",p.name).put("sleepGoal",p.sleepGoal).put("stepGoal",p.stepGoal).put("waterGoal",p.waterGoal).put("bedtime",p.bedtime).put("backgroundSync",p.backgroundSync).toString()).apply()}
+    fun prefs():Preferences=runCatching{val p=JSONObject(storage.getString("prefs","{}")!!);Preferences(p.optString("name","Your"),p.optInt("sleepGoal",480),p.optInt("stepGoal",10000),p.optInt("waterGoal",2500),p.optString("bedtime","23:00"),p.optBoolean("backgroundSync",false),p.optBoolean("automaticSync",true),p.optInt("calorieGoal",500).coerceIn(100,2000),p.optInt("exerciseGoal",30).coerceIn(5,180))}.getOrDefault(Preferences())
+    fun savePrefs(p:Preferences){storage.edit().putString("prefs",JSONObject().put("name",p.name).put("sleepGoal",p.sleepGoal).put("stepGoal",p.stepGoal).put("waterGoal",p.waterGoal).put("bedtime",p.bedtime).put("backgroundSync",p.backgroundSync).put("automaticSync",p.automaticSync).put("calorieGoal",p.calorieGoal).put("exerciseGoal",p.exerciseGoal).toString()).apply()}
     fun water(date:LocalDate)=storage.getInt("water_$date",0)
     fun addWater(date:LocalDate,amount:Int){storage.edit().putInt("water_$date",(water(date)+amount).coerceAtLeast(0)).apply()}
     fun journals():List<JournalEntry> = runCatching { val a=JSONArray(storage.getString("journals","[]"));(0 until a.length()).map{val e=a.getJSONObject(it);val h=e.getJSONArray("habits");JournalEntry(LocalDate.parse(e.getString("date")),e.getInt("mood"),(0 until h.length()).map(h::getString),e.getString("note"))} }.getOrDefault(emptyList())
@@ -36,29 +44,81 @@ class HealthStore(private val context: Context) {
     private fun writeWorkouts(ws:List<ManualWorkout>){storage.edit().putString("workouts",JSONArray(ws.map{JSONObject().put("id",it.id).put("date",it.date.toString()).put("type",it.type).put("minutes",it.minutes).put("intensity",it.intensity)}).toString()).apply()}
     fun clearAll(){storage.edit().clear().apply()}
 }
-data class FormaState(val data:HealthData, val prefs:Preferences, val selected:LocalDate, val busy:Boolean=false, val water:Int=0,val journals:List<JournalEntry> = emptyList(),val workouts:List<ManualWorkout> = emptyList(),val message:String?=null)
+object HealthSyncCoordinator {
+    val lock=Mutex()
+    val epoch=AtomicInteger()
+    suspend fun run(store:HealthStore,reader:HealthReader,fullHistory:Boolean=false,onProgress:(SyncProgress)->Unit={},onData:(HealthData)->Unit={},isAllowed:()->Boolean={true}):HealthData = lock.withLock {
+        currentCoroutineContext().ensureActive()
+        if(!isAllowed())throw CancellationException("Health refresh was paused")
+        val epochAtStart=epoch.get()
+        val scope=try { reader.changeScope() }catch(e:CancellationException){throw e}catch(e:Exception){null}
+        val token=try { reader.changeToken() }catch(e:CancellationException){throw e}catch(e:Exception){null}
+        val result=reader.sync(store.health(),fullHistory,onProgress) { data->
+            currentCoroutineContext().ensureActive()
+            if(epochAtStart!=epoch.get() || !isAllowed())throw CancellationException("Local health records were cleared or refresh paused")
+            store.saveHealth(data);onData(data)
+        }
+        currentCoroutineContext().ensureActive()
+        if(epochAtStart!=epoch.get() || !isAllowed())throw CancellationException("Local health records were cleared or refresh paused")
+        if(token!=null && scope!=null)store.saveCheckpoint(token,scope)
+        result
+    }
+}
+data class FormaState(val data:HealthData, val prefs:Preferences, val selected:LocalDate, val busy:Boolean=false, val water:Int=0,val journals:List<JournalEntry> = emptyList(),val workouts:List<ManualWorkout> = emptyList(),val message:String?=null,val connection:ConnectionState=ConnectionState(),val syncProgress:SyncProgress=SyncProgress())
 class FormaViewModel(app:Application):AndroidViewModel(app) {
     val store=HealthStore(app);val reader=HealthReader(app)
     private val initial=store.health() ?: store.demo()
-    private val _state=MutableStateFlow(FormaState(initial,store.prefs(),initial.days.last().date,water=store.water(initial.days.last().date),journals=store.journals(),workouts=store.workouts()))
+    private val _state=MutableStateFlow(FormaState(initial,store.prefs(),if(initial.demo)initial.days.last().date else LocalDate.now(),water=store.water(if(initial.demo)initial.days.last().date else LocalDate.now()),journals=store.journals(),workouts=store.workouts()))
     val state=_state.asStateFlow()
     private var syncJob:Job?=null
     fun refreshLocal(){val health=store.health()?:store.demo();_state.update{it.copy(data=health,prefs=store.prefs(),water=store.water(it.selected),journals=store.journals(),workouts=store.workouts())}}
     fun select(date:LocalDate){_state.update{it.copy(selected=date,water=store.water(date))}}
     fun message(text:String){_state.update{it.copy(message=text)}}
     fun clearMessage(){_state.update{it.copy(message=null)}}
-    fun sync(){if(_state.value.busy)return;_state.update{it.copy(busy=true)};syncJob=viewModelScope.launch {
-        try{val data=withContext(Dispatchers.IO){reader.sync(store.health())};store.saveHealth(data);_state.update{it.copy(data=data,selected=data.days.last().date,busy=false,message="Watch records updated",water=store.water(data.days.last().date))}}
-        catch(e:CancellationException){throw e}
-        catch(e:Exception){_state.update{it.copy(busy=false,message=e.message ?: "Sync unavailable. Please try again.")}}
-    }}
-    fun import(json:String){viewModelScope.launch{runCatching{withContext(Dispatchers.Default){HealthJson.decode(json)}}.onSuccess { data->store.saveHealth(data);_state.update{it.copy(data=data,selected=data.days.last().date,water=store.water(data.days.last().date),message="Imported ${data.days.size} days. Saved on this phone.")} }.onFailure{message(it.message ?: "Invalid file")}}}
+    fun refreshConnection(){viewModelScope.launch { try { val connection=withContext(Dispatchers.IO){reader.connection()};_state.update { it.copy(connection=connection) } }catch(e:CancellationException){throw e}catch(e:Exception){message("Couldn’t check Health Connect. Open connections to retry.")} }}
+    @Volatile private var syncGeneration=0
+    suspend fun refreshIfChanged(){
+        if(_state.value.busy || !store.prefs().automaticSync)return
+        val connection=reader.connection();_state.update { it.copy(connection=connection) }
+        if(!connection.hasReadAccess)return
+        val saved=store.health();val checkpoint=store.checkpoint()
+        val incomplete=saved?.report?.historyComplete!=true
+        val newDay=saved?.syncedAt?.atZone(ZoneId.systemDefault())?.toLocalDate()!=LocalDate.now()
+        val scopeChanged=checkpoint==null || checkpoint.second!=reader.changeScope()
+        if(incomplete || newDay || scopeChanged) { sync(automatic=true);return }
+        // Changed/deleted history may be older than the recent window. Reconcile all allowed days.
+        val changes=try { reader.changes(checkpoint!!.first) }catch(e:CancellationException){throw e}catch(e:Exception){ChangeCheck(true,true)}
+        if(changes.changed)sync(fullHistory=changes.historyChanged,automatic=true)
+    }
+    fun sync(fullHistory:Boolean=false,automatic:Boolean=false){
+        if(_state.value.busy)return
+        if(!automatic && !_state.value.prefs.automaticSync)updatePrefs(_state.value.prefs.copy(automaticSync=true))
+        val generation=++syncGeneration
+        _state.update{it.copy(busy=true,syncProgress=SyncProgress("Reading recent records"))}
+        syncJob=viewModelScope.launch {
+            try {
+                withContext(Dispatchers.IO) { HealthSyncCoordinator.run(store,reader,fullHistory,
+                    onProgress={ p->if(generation==syncGeneration)_state.update { it.copy(syncProgress=p) } },
+                    onData={ data->if(generation==syncGeneration)_state.update { val selected=if(it.data.source!=data.source)LocalDate.now()else it.selected;it.copy(data=data,selected=selected,water=store.water(selected)) } }) }
+                if(generation==syncGeneration)_state.update { it.copy(message=if(automatic)it.message else "Samsung Health records refreshed") }
+            }catch(e:CancellationException){throw e}
+            catch(e:Exception){if(generation==syncGeneration){refreshLocal();message(e.message ?: "Sync paused. Saved records are available; retry to continue history import.")}}
+            finally { if(generation==syncGeneration)_state.update { it.copy(busy=false) };refreshConnection() }
+        }
+    }
+    fun cancelSync(){
+        ++syncGeneration;syncJob?.cancel();HealthSyncCoordinator.epoch.incrementAndGet()
+        updatePrefs(_state.value.prefs.copy(automaticSync=false,backgroundSync=false))
+        WorkManager.getInstance(getApplication()).cancelUniqueWork("forma-health-sync")
+        _state.update { it.copy(busy=false,syncProgress=SyncProgress("History paused · tap Sync to continue")) }
+    }
+    fun import(json:String){viewModelScope.launch{runCatching{withContext(Dispatchers.Default){HealthJson.decode(json).let { it.copy(source="Imported · ${it.source}".take(120),report=null) }}}.onSuccess { data->HealthSyncCoordinator.epoch.incrementAndGet();cancelSync();enableBackground(false);updatePrefs(_state.value.prefs.copy(automaticSync=false));store.clearHealth();store.saveHealth(data);_state.update{it.copy(data=data,selected=data.days.last().date,water=store.water(data.days.last().date),message="Imported ${data.days.size} days. Automatic health reads paused; tap Sync to resume Samsung records.")} }.onFailure{message(it.message ?: "Invalid file")}}}
     fun updatePrefs(p:Preferences){store.savePrefs(p);_state.update{it.copy(prefs=p)}}
     fun addWater(amount:Int){store.addWater(_state.value.selected,amount);refreshLocal()}
     fun saveJournal(mood:Int,habits:List<String>,note:String){store.saveJournal(JournalEntry(_state.value.selected,mood,habits,note.take(2000)));refreshLocal();message("Your check-in is saved")}
     fun saveWorkout(type:String,minutes:Int,intensity:String){require(minutes in 1..600);store.saveWorkout(ManualWorkout(UUID.randomUUID().toString(),_state.value.selected,type,minutes,intensity));refreshLocal();message("Activity saved in your journal")}
     fun deleteWorkout(id:String){store.deleteWorkout(id);refreshLocal()}
-    fun clearAll(){syncJob?.cancel();_state.update{it.copy(busy=false)};WorkManager.getInstance(getApplication()).cancelUniqueWork("forma-health-sync");store.clearAll();refreshLocal();select(_state.value.data.days.last().date);message("Local data cleared")}
+    fun clearAll(){HealthSyncCoordinator.epoch.incrementAndGet();cancelSync();_state.update{it.copy(busy=false)};WorkManager.getInstance(getApplication()).cancelUniqueWork("forma-health-sync");store.clearAll();store.savePrefs(Preferences(automaticSync=false));refreshLocal();select(_state.value.data.days.last().date);message("Local data cleared. Tap Sync when you want to import records again.")}
     fun enableBackground(enable:Boolean){
         updatePrefs(_state.value.prefs.copy(backgroundSync=enable))
         val work=WorkManager.getInstance(getApplication())
@@ -71,6 +131,6 @@ class HealthSyncWorker(context:Context,params:WorkerParameters):CoroutineWorker(
         if(!store.prefs().backgroundSync)return Result.success()
         if(reader.status!=androidx.health.connect.client.HealthConnectClient.SDK_AVAILABLE)return Result.success()
         if(HealthPermission.PERMISSION_READ_HEALTH_DATA_IN_BACKGROUND !in reader.client.permissionController.getGrantedPermissions())return Result.success()
-        val data=reader.sync(store.health());if(store.prefs().backgroundSync)store.saveHealth(data);Result.success()
-    }catch(e:SecurityException){Result.success()}catch(e:Exception){Result.retry()} }
+        HealthSyncCoordinator.run(store,reader,isAllowed={store.prefs().backgroundSync});Result.success()
+    }catch(e:CancellationException){throw e}catch(e:SecurityException){Result.success()}catch(e:Exception){Result.retry()} }
 }

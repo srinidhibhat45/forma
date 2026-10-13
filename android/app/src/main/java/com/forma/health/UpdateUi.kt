@@ -28,7 +28,7 @@ import java.time.format.DateTimeFormatter
     }
 }
 
-@Composable fun AppUpdatePanel(state:AppUpdateState,onCheck:()->Unit,onInstall:()->Unit,onCancel:()->Unit,onAutomatic:(Boolean)->Unit) {
+@Composable fun AppUpdatePanel(state:AppUpdateState,onCheck:()->Unit,onInstall:()->Unit,onCancel:()->Unit,onAutomatic:(Boolean)->Unit,onInstallationSettings:()->Unit={}) {
     val colors=MaterialTheme.colorScheme
     Row(verticalAlignment=Alignment.CenterVertically) {
         Icon(Icons.Outlined.SystemUpdate,null,tint=colors.primary,modifier=Modifier.size(42.dp))
@@ -71,5 +71,7 @@ import java.time.format.DateTimeFormatter
     }
     if(state.checkedAt>0) Text("Last checked ${Instant.ofEpochMilli(state.checkedAt).atZone(ZoneId.systemDefault()).format(DateTimeFormatter.ofPattern("d MMM, h:mm a"))}",fontSize=10.sp,color=colors.onSurfaceVariant)
     Text("Updates come from srinidhibhat45/forma on GitHub. Forma verifies the file and signing identity before opening Android’s installer. Confirm the update there; your local records stay in place.",fontSize=11.sp,lineHeight=19.sp,color=colors.onSurfaceVariant)
+    Text("No Play Store listing is needed to install this signed APK. On a Galaxy phone, allow installations from your download source for the first install, and from Forma for in-app updates. Samsung Auto Blocker can prevent both; review it under Settings → Security and privacy → Auto Blocker if Android reports a block. Forma cannot override that setting or guarantee Play Protect won’t show a warning.",fontSize=11.sp,lineHeight=19.sp,color=colors.onSurfaceVariant)
+    TextButton(onClick=onInstallationSettings) { Text("Open installation security settings",fontSize=11.sp) }
     Text("Only version checks and update downloads use the Internet. Your health records and journal are never included in these requests.",fontSize=11.sp,lineHeight=19.sp,color=colors.onSurfaceVariant)
 }
