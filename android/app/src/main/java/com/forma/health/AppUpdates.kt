@@ -159,6 +159,7 @@ class AppUpdateViewModel(app:Application):AndroidViewModel(app) {
     private val _install=MutableSharedFlow<File>(extraBufferCapacity=1)
     val installation=_install.asSharedFlow()
     private var downloadJob:Job?=null
+    private var downloadGeneration=0
     private val listener=SharedPreferences.OnSharedPreferenceChangeListener { _,_ -> refreshLocal() }
     init { store.preferences.registerOnSharedPreferenceChangeListener(listener);schedule() }
     override fun onCleared() { store.preferences.unregisterOnSharedPreferenceChangeListener(listener);super.onCleared() }
@@ -186,20 +187,22 @@ class AppUpdateViewModel(app:Application):AndroidViewModel(app) {
     fun install() {
         val release=_state.value.release ?: return
         if(_state.value.downloading || _state.value.checking)return
+        val generation=++downloadGeneration
         _state.update { it.copy(downloading=true,progress=0f,error=null) }
         downloadJob=viewModelScope.launch {
             try {
                 val file=service.file(release)
                 val ready=if(_state.value.ready) { service.verified(file,release);file }
-                    else service.download(release) { progress -> _state.update { it.copy(progress=progress) } }
+                    else service.download(release) { progress -> if(generation==downloadGeneration)_state.update { it.copy(progress=progress) } }
+                if(generation!=downloadGeneration)return@launch
                 _state.update { it.copy(ready=true,downloading=false,progress=1f) }
                 _install.emit(ready)
             } catch(e:CancellationException) { throw e }
-            catch(e:Exception) { service.file(release).delete();_state.update { it.copy(ready=false,error=e.message ?: "Couldn’t download the update. Try again.") } }
-            finally { _state.update { it.copy(downloading=false) } }
+            catch(e:Exception) { if(generation==downloadGeneration) { service.file(release).delete();_state.update { it.copy(ready=false,error=e.message ?: "Couldn’t download the update. Try again.") } } }
+            finally { if(generation==downloadGeneration)_state.update { it.copy(downloading=false) } }
         }
     }
-    fun cancelDownload() { downloadJob?.cancel();_state.update { it.copy(downloading=false,progress=0f) } }
+    fun cancelDownload() { ++downloadGeneration;downloadJob?.cancel();_state.update { it.copy(downloading=false,progress=0f) } }
     fun installError(text:String) { _state.update { it.copy(error=text) } }
 }
 
