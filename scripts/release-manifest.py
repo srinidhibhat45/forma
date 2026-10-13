@@ -22,6 +22,6 @@ if not 0 < size <= 100 * 1024 * 1024:
 sha = hashlib.sha256(apk.read_bytes()).hexdigest()
 manifest = {'schemaVersion': 1, 'packageName': 'com.forma.health', 'versionCode': code,
             'versionName': name, 'sha256': sha, 'apkBytes': size}
-(apk.parent / 'update.json').write_text(json.dumps(manifest, indent=2) + '\n')
-(apk.parent / 'forma.apk.sha256').write_text(f'{sha}  forma.apk\n')
+(apk.parent / ('watch-update.json' if apk.name == 'forma-watch.apk' else 'update.json')).write_text(json.dumps(manifest, indent=2) + '\n')
+(apk.parent / (apk.name + '.sha256')).write_text(f'{sha}  {apk.name}\n')
 print(f'Validated release manifest for build {code}')

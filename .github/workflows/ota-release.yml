@@ -37,7 +37,7 @@ jobs:
           FORMA_VERSION_CODE: ${{ steps.version.outputs.code }}
           FORMA_VERSION_NAME: ${{ steps.version.outputs.name }}
         run: >-
-          ./gradlew --no-daemon :app:testDebugUnitTest :app:lintDebug :app:assembleRelease
+          ./gradlew --no-daemon :app:testDebugUnitTest :app:lintDebug :wear:lintDebug :app:assembleRelease :wear:assembleRelease
           -PformaVersionCode="$FORMA_VERSION_CODE" -PformaVersionName="$FORMA_VERSION_NAME"
       - name: Sign the update
         env:
@@ -50,11 +50,14 @@ jobs:
           printf '%s' "$FORMA_KEYSTORE_BASE64" | base64 --decode > "$FORMA_KEYSTORE"
           chmod 600 "$FORMA_KEYSTORE"
           scripts/sign-apk.sh android/app/build/outputs/apk/release/app-release-unsigned.apk release/forma.apk
+          scripts/sign-apk.sh android/wear/build/outputs/apk/release/wear-release-unsigned.apk release/forma-watch.apk
       - name: Write verified update manifest
         env:
           FORMA_VERSION_CODE: ${{ steps.version.outputs.code }}
           FORMA_VERSION_NAME: ${{ steps.version.outputs.name }}
-        run: python3 scripts/release-manifest.py release/forma.apk "$FORMA_VERSION_CODE" "$FORMA_VERSION_NAME"
+        run: |
+          python3 scripts/release-manifest.py release/forma.apk "$FORMA_VERSION_CODE" "$FORMA_VERSION_NAME"
+          python3 scripts/release-manifest.py release/forma-watch.apk "$FORMA_VERSION_CODE" "$FORMA_VERSION_NAME"
       - name: Publish the update
         env:
           GH_TOKEN: ${{ github.token }}
@@ -62,8 +65,8 @@ jobs:
           FORMA_VERSION_NAME: ${{ steps.version.outputs.name }}
           FORMA_VERSION_CODE: ${{ steps.version.outputs.code }}
         run: |
-          printf '%s\n' 'The latest Forma changes, built automatically from main.' '' 'Your local health records stay on your phone when you update.' > release/notes.md
-          gh release create "$FORMA_TAG" release/forma.apk release/update.json release/forma.apk.sha256 \
+          printf '%s\n' 'A denser native health dashboard, recorded workout details, sleep patterns, personal vitals, nutrition, and an optional Wear OS companion.' '' 'Your local health records stay on your phone when you update.' '' 'Install forma.apk on your phone. Install forma-watch.apk on your paired Wear OS watch for direct measurements. Open Forma on the watch to enable daily activity or take a 60-second heart-rate check.' > release/notes.md
+          gh release create "$FORMA_TAG" release/forma.apk release/update.json release/forma.apk.sha256 release/forma-watch.apk release/watch-update.json release/forma-watch.apk.sha256 \
             --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
             --title "Forma $FORMA_VERSION_NAME · build $FORMA_VERSION_CODE" --notes-file release/notes.md --latest
       - name: Remove signing material from runner

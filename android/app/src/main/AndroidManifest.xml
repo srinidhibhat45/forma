@@ -26,8 +26,13 @@
     <uses-permission android:name="android.permission.health.READ_POWER"/>
     <uses-permission android:name="android.permission.health.READ_BASAL_METABOLIC_RATE"/>
     <uses-permission android:name="android.permission.health.READ_HEIGHT"/>
+    <uses-permission android:name="android.permission.health.READ_NUTRITION"/>
+    <uses-permission android:name="android.permission.health.READ_HYDRATION"/>
     <queries><package android:name="com.google.android.apps.healthdata"/><package android:name="com.sec.android.app.shealth"/><package android:name="com.samsung.android.app.watchmanager"/><intent><action android:name="androidx.health.ACTION_SHOW_PERMISSIONS_RATIONALE"/></intent></queries>
     <application android:label="Forma" android:theme="@style/Theme.Forma" android:icon="@drawable/forma_icon" android:allowBackup="false" android:dataExtractionRules="@xml/data_extraction_rules" android:supportsRtl="true" android:usesCleartextTraffic="false">
+        <service android:name=".WatchMessageService" android:exported="true">
+            <intent-filter><action android:name="com.google.android.gms.wearable.MESSAGE_RECEIVED"/><data android:scheme="wear" android:host="*" android:path="/forma/v1/frame"/></intent-filter>
+        </service>
         <provider android:name="androidx.core.content.FileProvider" android:authorities="${applicationId}.updates" android:exported="false" android:grantUriPermissions="true">
             <meta-data android:name="android.support.FILE_PROVIDER_PATHS" android:resource="@xml/update_paths"/>
         </provider>

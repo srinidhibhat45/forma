@@ -22,7 +22,7 @@ private fun stamp(at:Instant?)=at?.atZone(ZoneId.systemDefault())?.format(DateTi
         Row(Modifier.fillMaxWidth().padding(16.dp),verticalAlignment=Alignment.CenterVertically) {
             Icon(if(state.busy)Icons.Outlined.Sync else Icons.Outlined.Watch,null,tint=c.primary,modifier=Modifier.size(24.dp))
             Column(Modifier.weight(1f).padding(start=13.dp)) {
-                Text(if(state.busy)state.syncProgress.label else if(state.data.demo)"Connect your watch data" else if(!state.prefs.automaticSync && !state.prefs.backgroundSync)"Health refresh paused" else HealthQuality.freshness(state.data.report?.latestRecordAt),fontSize=12.sp,fontWeight=FontWeight.SemiBold)
+                Text(if(state.busy)state.syncProgress.label else if(state.data.demo)"Connect your watch data" else if(state.data.days.none { it.values.isNotEmpty() || it.recordedWorkouts.isNotEmpty() })"No shared measurements yet" else if(!state.prefs.automaticSync && !state.prefs.backgroundSync)"Health refresh paused" else HealthQuality.freshness(state.data.report?.latestRecordAt),fontSize=12.sp,fontWeight=FontWeight.SemiBold)
                 Text(if(state.data.demo)"Samsung Health → Forma" else "Latest reported record · ${stamp(state.data.report?.latestRecordAt)}",fontSize=10.sp,lineHeight=16.sp,color=c.onSurfaceVariant,modifier=Modifier.padding(top=5.dp))
             }
             Icon(Icons.Outlined.ChevronRight,null,tint=c.onSurfaceVariant,modifier=Modifier.size(19.dp))
@@ -40,7 +40,7 @@ private fun stamp(at:Instant?)=at?.atZone(ZoneId.systemDefault())?.format(DateTi
             Icon(Icons.Outlined.Watch,null,modifier=Modifier.size(44.dp),tint=colors.onPrimary)
             Column(Modifier.padding(start=18.dp)) {
                 Text("Your watch.\nYour rhythm.",fontSize=27.sp,lineHeight=30.sp,fontWeight=FontWeight.SemiBold,color=colors.onPrimary)
-                Text(if(native)"${state.data.days.size} days with shared measurements" else "Galaxy Watch6 Classic",fontSize=11.sp,color=colors.onPrimary,modifier=Modifier.padding(top=9.dp))
+                Text(if(native)"${state.data.days.count { it.values.isNotEmpty() || it.recordedWorkouts.isNotEmpty() }} days with shared measurements" else "Galaxy Watch6 Classic",fontSize=11.sp,color=colors.onPrimary,modifier=Modifier.padding(top=9.dp))
             }
         }
     }

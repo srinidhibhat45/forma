@@ -49,16 +49,16 @@ data class RingProgress(val value:Double?,val target:Int) {
     val labels=listOf("Steps",if(hasOnlyTotal)"Shared calories" else "Active calories","Exercise")
     val units=listOf("steps","kcal","min")
     Surface(color=colors.surface,shape=RoundedCornerShape(23.dp)) {
-        Column(Modifier.padding(19.dp)) {
+        Column(Modifier.padding(16.dp)) {
             Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
-                    Text("Make today count.",fontSize=23.sp,fontWeight=FontWeight.Bold,letterSpacing=(-.8).sp)
-                    Text("YOUR ACTIVITY / YOUR TARGETS",fontSize=9.sp,letterSpacing=1.5.sp,color=colors.onSurfaceVariant,modifier=Modifier.padding(top=7.dp))
+                    Text("Make today count.",fontSize=20.sp,fontWeight=FontWeight.Bold,letterSpacing=(-.8).sp)
+                    Text("DAILY RINGS",fontSize=8.sp,letterSpacing=1.4.sp,color=colors.onSurfaceVariant,modifier=Modifier.padding(top=3.dp))
                 }
                 IconButton(onClick=onGoals,modifier=Modifier.size(35.dp)) { Icon(Icons.Outlined.Tune,"Edit ring targets",tint=colors.onSurfaceVariant,modifier=Modifier.size(20.dp)) }
             }
-            Row(Modifier.fillMaxWidth().padding(top=22.dp,bottom=16.dp),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(18.dp)) {
-                Box(Modifier.weight(1f).aspectRatio(1f).clickable(onClick=onMove).semantics {
+            Row(Modifier.fillMaxWidth().padding(top=14.dp,bottom=12.dp),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(18.dp)) {
+                Box(Modifier.size(118.dp).clickable(onClick=onMove).semantics {
                     contentDescription="Activity rings. "+rings.mapIndexed { i,r->"${labels[i]}: ${r.value?.let { measurement(it) } ?: "not shared"} of ${r.target} ${units[i]}" }.joinToString(". ")
                 },contentAlignment=Alignment.Center) {
                     val progress=rings.map { animateFloatAsState((it.fraction ?: 0.0).coerceIn(0.0,1.0).toFloat(),tween(850),label="Ring progress").value }
@@ -72,22 +72,21 @@ data class RingProgress(val value:Double?,val target:Int) {
                         }
                     }
                     Column(horizontalAlignment=Alignment.CenterHorizontally) {
-                        Text("${rings.count { it.closed }}",fontSize=32.sp,fontWeight=FontWeight.Bold,lineHeight=35.sp)
-                        Text("CLOSED",fontSize=8.sp,lineHeight=11.sp,letterSpacing=.7.sp,color=colors.onSurfaceVariant)
+                        Text("${rings.count { it.closed }}",fontSize=25.sp,fontWeight=FontWeight.Bold,lineHeight=28.sp)
+                        Text("CLOSED",fontSize=6.sp,lineHeight=9.sp,letterSpacing=.7.sp,color=colors.onSurfaceVariant)
                     }
                 }
-                Column(Modifier.weight(1.02f),verticalArrangement=Arrangement.spacedBy(18.dp)) {
+                Column(Modifier.weight(1f),verticalArrangement=Arrangement.spacedBy(8.dp)) {
                     rings.forEachIndexed { i,r->
                         Column {
-                            Row(verticalAlignment=Alignment.CenterVertically) {
-                                Surface(color=accents[i],shape=CircleShape,modifier=Modifier.size(5.dp)) {}
-                                Text(labels[i],fontSize=11.sp,lineHeight=16.sp,color=colors.onSurfaceVariant,modifier=Modifier.padding(start=6.dp))
+                            Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.SpaceBetween) {
+                                Text(labels[i],fontSize=9.sp,lineHeight=12.sp,color=colors.onSurfaceVariant)
+                                Text(when { r.value==null->"Not shared";r.closed->"${(r.fraction!!*100).roundToInt()}% closed";else->"${measurement(r.remaining)} to go" },fontSize=8.sp,lineHeight=12.sp,color=accents[i])
                             }
-                            Row(verticalAlignment=Alignment.Bottom,modifier=Modifier.padding(top=3.dp)) {
-                                Text(measurement(r.value),fontSize=23.sp,fontWeight=FontWeight.Bold,color=accents[i],letterSpacing=(-.7).sp)
-                                Text(" / ${measurement(r.target.toDouble())}",fontSize=10.sp,lineHeight=16.sp,color=colors.onSurfaceVariant,modifier=Modifier.padding(bottom=4.dp))
+                            Row(verticalAlignment=Alignment.Bottom) {
+                                Text(measurement(r.value),fontSize=20.sp,lineHeight=25.sp,fontWeight=FontWeight.Bold,color=accents[i],letterSpacing=(-.7).sp)
+                                Text(" / ${measurement(r.target.toDouble())} ${units[i]}",fontSize=9.sp,lineHeight=14.sp,color=colors.onSurfaceVariant,modifier=Modifier.padding(bottom=3.dp))
                             }
-                            Text(when { r.value==null->"Not shared";r.closed->"Closed · ${(r.fraction!!*100).roundToInt()}%";else->"${measurement(r.remaining)} ${units[i]} to go" },fontSize=9.sp,lineHeight=14.sp,color=colors.onSurfaceVariant,modifier=Modifier.padding(top=3.dp))
                         }
                     }
                 }
@@ -103,21 +102,24 @@ data class RingProgress(val value:Double?,val target:Int) {
     }
 }
 
-@Composable fun TodayHeart(day:HealthDay?,demo:Boolean,onClick:()->Unit) {
+@Composable fun TodayHeart(day:HealthDay?,demo:Boolean,watch:WatchFrame?=null,onClick:()->Unit) {
     val colors=MaterialTheme.colorScheme
+    var now by remember { mutableStateOf(Instant.now()) }
+    LaunchedEffect(watch) { while(true) { now=Instant.now();kotlinx.coroutines.delay(1000) } }
+    val live=watch?.currentHeart(now)
     Surface(onClick=onClick,color=colors.surface,shape=RoundedCornerShape(20.dp)) {
         Column(Modifier.padding(19.dp)) {
             Row(verticalAlignment=Alignment.CenterVertically) {
                 Icon(Icons.Outlined.FavoriteBorder,null,tint=HeartRed,modifier=Modifier.size(20.dp))
                 Text("Heart rate",fontSize=14.sp,fontWeight=FontWeight.SemiBold,modifier=Modifier.weight(1f).padding(start=9.dp))
-                Text(if(demo)"SAMPLE" else "LATEST RECORDED",fontSize=8.sp,letterSpacing=1.sp,color=colors.onSurfaceVariant)
+                Text(if(live!=null)"LIVE WATCH" else if(demo)"SAMPLE" else "LATEST RECORDED",fontSize=8.sp,letterSpacing=1.sp,color=colors.onSurfaceVariant)
             }
             Row(Modifier.fillMaxWidth().padding(top=10.dp),verticalAlignment=Alignment.Bottom) {
-                Text(measurement(day?.get("heartRateLatest")),fontSize=44.sp,lineHeight=48.sp,fontWeight=FontWeight.Bold,letterSpacing=(-2).sp)
+                Text(measurement(live ?: day?.get("heartRateLatest")),fontSize=44.sp,lineHeight=48.sp,fontWeight=FontWeight.Bold,letterSpacing=(-2).sp)
                 Text(" bpm",fontSize=13.sp,color=colors.onSurfaceVariant,modifier=Modifier.padding(bottom=8.dp))
                 Spacer(Modifier.weight(1f))
                 Column(horizontalAlignment=Alignment.End,modifier=Modifier.padding(bottom=6.dp)) {
-                    Text(if(demo)"Sample reading" else day?.heartRecordedAt?.atZone(ZoneId.systemDefault())?.format(DateTimeFormatter.ofPattern("d MMM · HH:mm")) ?: "No timestamp shared",fontSize=10.sp,lineHeight=16.sp,color=colors.onSurfaceVariant)
+                    Text(if(live!=null)"Watch · ${watch!!.heartAt!!.atZone(ZoneId.systemDefault()).format(DateTimeFormatter.ofPattern("HH:mm:ss"))}" else if(demo)"Sample reading" else day?.heartRecordedAt?.atZone(ZoneId.systemDefault())?.format(DateTimeFormatter.ofPattern("d MMM · HH:mm")) ?: "No timestamp shared",fontSize=10.sp,lineHeight=16.sp,color=colors.onSurfaceVariant)
                     Text("Resting · ${measurement(day?.get("restingHeartRate"))} bpm",fontSize=10.sp,lineHeight=16.sp,color=colors.onSurfaceVariant,modifier=Modifier.padding(top=6.dp))
                 }
             }
@@ -139,6 +141,7 @@ data class RingProgress(val value:Double?,val target:Int) {
 
 data class MetricDefinition(val key:String,val label:String,val unit:String,val group:String,val decimals:Int=0)
 val healthCatalog=listOf(
+    MetricDefinition("dietaryCalories","Food energy","kcal","Nutrition"),MetricDefinition("proteinGrams","Protein","g","Nutrition",1),MetricDefinition("carbsGrams","Carbohydrates","g","Nutrition",1),MetricDefinition("fatGrams","Dietary fat","g","Nutrition",1),MetricDefinition("fiberGrams","Fiber","g","Nutrition",1),MetricDefinition("sugarGrams","Sugar","g","Nutrition",1),MetricDefinition("sodiumMg","Sodium","mg","Nutrition"),MetricDefinition("waterMl","Shared water intake","ml","Nutrition"),
     MetricDefinition("totalCalories","Shared total calories","kcal","Movement"),MetricDefinition("speedKmh","Average recorded speed","km/h","Movement",1),MetricDefinition("maxSpeedKmh","Peak recorded speed","km/h","Movement",1),MetricDefinition("powerWatts","Average recorded power","W","Movement"),MetricDefinition("maxPowerWatts","Peak recorded power","W","Movement"),MetricDefinition("vo2Max","Recorded VO₂ max","ml/kg/min","Heart",1),MetricDefinition("basalMetabolicRate","Basal metabolic rate","kcal/day","Body"),MetricDefinition("heightCm","Height","cm","Body",1),
     MetricDefinition("steps","Steps","steps","Movement"),MetricDefinition("activeCalories","Active calories","kcal","Movement"),MetricDefinition("activeMinutes","Recorded exercise","min","Movement"),MetricDefinition("distanceKm","Distance","km","Movement",1),MetricDefinition("floors","Floors climbed","floors","Movement"),
     MetricDefinition("heartRateLatest","Latest heart rate","bpm","Heart"),MetricDefinition("heartRateAverage","Average heart rate","bpm","Heart"),MetricDefinition("heartRateMin","Lowest recorded HR","bpm","Heart"),MetricDefinition("heartRateMax","Highest recorded HR","bpm","Heart"),MetricDefinition("restingHeartRate","Resting heart rate","bpm","Heart"),MetricDefinition("sleepHeartRate","Sleeping heart rate","bpm","Heart"),MetricDefinition("hrv","Heart rate variability","ms","Heart"),
@@ -178,7 +181,7 @@ val healthCatalog=listOf(
     Text("Every shared signal.\nA little more context.",fontSize=23.sp,lineHeight=29.sp,fontWeight=FontWeight.SemiBold)
     OutlinedTextField(value=query,onValueChange={query=it.take(80)},placeholder={Text("Find a metric",fontSize=12.sp)},leadingIcon={Icon(Icons.Outlined.Search,null)},singleLine=true,modifier=Modifier.fillMaxWidth(),shape=RoundedCornerShape(12.dp))
     Row(Modifier.horizontalScroll(rememberScrollState()),horizontalArrangement=Arrangement.spacedBy(7.dp)) {
-        listOf("All","Movement","Heart","Sleep","Vitals","Body").forEach { label->FilterChip(selected=group==label,onClick={group=label},label={Text(label,fontSize=11.sp)}) }
+        listOf("All","Movement","Heart","Sleep","Vitals","Body","Nutrition").forEach { label->FilterChip(selected=group==label,onClick={group=label},label={Text(label,fontSize=11.sp)}) }
     }
     val fields=healthCatalog.filter { (group=="All" || it.group==group) && it.label.contains(query,ignoreCase=true) }
     if(fields.isEmpty())Text("No matching metric",fontSize=13.sp)

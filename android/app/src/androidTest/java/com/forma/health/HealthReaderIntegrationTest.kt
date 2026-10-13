@@ -21,7 +21,7 @@ class HealthReaderIntegrationTest {
     private val origin=DataOrigin("com.sec.android.app.shealth")
     private fun step(at:Instant)=StepsRecord(at.minusSeconds(60),null,at,null,100,Metadata.manualEntry())
     private fun reader(changes:Map<String,ChangesResponse> = emptyMap(),records:List<Record> = emptyList(),onRead:(ReadRecordsRequest<*>)->Unit={}):HealthReader {
-        val permissions=setOf(HealthPermission.getReadPermission(SleepSessionRecord::class),HealthPermission.getReadPermission(HeartRateRecord::class))
+        val permissions=setOf(HealthPermission.getReadPermission(SleepSessionRecord::class),HealthPermission.getReadPermission(HeartRateRecord::class))+records.map { HealthPermission.getReadPermission(it::class) }
         val controller=object:PermissionController {
             override suspend fun getGrantedPermissions()=permissions
             override suspend fun revokeAllPermissions()=Unit
@@ -38,7 +38,7 @@ class HealthReaderIntegrationTest {
                     val request=args!![0] as ReadRecordsRequest<*>;onRead(request)
                     assertEquals(setOf(origin),request.dataOriginFilter)
                     val selected=records.filter { request.recordType.isInstance(it) }.filter { r->
-                        val at=when(r) { is SleepSessionRecord->r.endTime;is HeartRateRecord->r.endTime;else->now }
+                        val at=when(r) { is SleepSessionRecord->r.endTime;is HeartRateRecord->r.endTime;is ExerciseSessionRecord->r.endTime;is NutritionRecord->r.startTime;else->now }
                         val range=request.timeRangeFilter;at>=range.startTime!! && at<range.endTime!!
                     }
                     // An empty final token is permitted by the API and must not trigger another read.
@@ -59,6 +59,24 @@ class HealthReaderIntegrationTest {
         assertTrue(reader(mapOf("start" to ChangesResponse(listOf(DeletionChange("removed")),"end",false,false))).changes("start").historyChanged)
         assertTrue(reader(mapOf("start" to ChangesResponse(emptyList(),"end",false,true))).changes("start").historyChanged)
         assertEquals(ChangeCheck(false,false),reader(mapOf("start" to ChangesResponse(emptyList(),"end",false,false))).changes("start"))
+    }
+    @Test fun aCompletedEmptyReconciliationRemovesTheFinalDeletedCachedDay()=runBlocking {
+        val old=HealthData("Samsung Health · Health Connect",listOf(HealthDay(today.minusDays(10),mapOf("steps" to 4000.0))),now.minusSeconds(86400))
+        var saved:HealthData?=null
+        val result=reader().sync(old,fullHistory=true,onData={saved=it})
+        assertEquals(result,saved);assertTrue(result.days.all { it.values.isEmpty() });assertNull(result.report!!.latestRecordAt)
+    }
+    @Test fun sessionsAndNutritionAreRetainedWithoutInventingUnsharedTotals()=runBlocking {
+        val start=now.minusSeconds(3600).minusNanos(now.nano.toLong()).let { it.minusSeconds(it.epochSecond%60) }
+        val end=start.plusSeconds(1800)
+        val exercise=ExerciseSessionRecord(start,null,end,null,Metadata.manualEntry(),ExerciseSessionRecord.EXERCISE_TYPE_RUNNING,title="Evening run")
+        val heart=HeartRateRecord(start,null,end,null,listOf(HeartRateRecord.Sample(start.plusSeconds(60),110),HeartRateRecord.Sample(start.plusSeconds(1200),140)),Metadata.manualEntry())
+        val food=NutritionRecord(startTime=start,startZoneOffset=null,endTime=start.plusSeconds(60),endZoneOffset=null,metadata=Metadata.manualEntry(),protein=androidx.health.connect.client.units.Mass.grams(25.0))
+        val result=reader(records=listOf<Record>(exercise,exercise,heart,food)).sync()
+        val day=result.days.first { it.date==start.atZone(ZoneId.systemDefault()).toLocalDate() };val w=day.recordedWorkouts.single()
+        assertEquals("Evening run",w.title);assertEquals(30.0,w.minutes,.001);assertEquals(2,w.heart.size);assertEquals(125.0,w.values["heartRateAverage"]!!,.001)
+        assertNull(w.values["distanceKm"]);assertEquals(25.0,day["proteinGrams"]!!,.001);assertNull(day["dietaryCalories"])
+        assertEquals(30.0,day["activeMinutes"]!!,.001)
     }
     @Test fun genericSleepAndCurrentHeartReachDifferentFieldsWithoutInventedBaselines()=runBlocking {
         val wake=today.atStartOfDay(ZoneId.systemDefault()).toInstant().plusSeconds(3600)

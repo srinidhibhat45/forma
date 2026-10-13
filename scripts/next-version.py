@@ -32,5 +32,5 @@ code = max(3, previous) + 1
 if code > 2100000000:
     raise SystemExit('Android version-code limit reached.')
 with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
-    output.write(f'code={code}\nname=1.3.0\ntag=build-{code}\n')
-print(f'Building Forma 1.3.0, Android build {code}')
+    output.write(f'code={code}\nname=1.4.0\ntag=build-{code}\n')
+print(f'Building Forma 1.4.0, Android build {code}')

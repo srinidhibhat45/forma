@@ -85,7 +85,7 @@ private fun hourLabel(hour:Double) = "%02d:%02d".format(hour.toInt(), ((hour%1)*
     showPrivacy:Boolean=false, initialPage:String="Today", initialSheet:String="",
     updateState:AppUpdateState=AppUpdateState(), onCheckUpdates:()->Unit={}, onInstallUpdate:()->Unit={},
     onCancelUpdate:()->Unit={}, onAutomaticUpdates:(Boolean)->Unit={},
-    onHistory:()->Unit={},onSamsungHealth:()->Unit={},onWatchApp:()->Unit={},onHealthSettings:()->Unit={},onInstallationSettings:()->Unit={}
+    onHistory:()->Unit={},onSamsungHealth:()->Unit={},onWatchApp:()->Unit={},onHealthSettings:()->Unit={},onInstallationSettings:()->Unit={},onWatchDownload:()->Unit={}
 ) {
     val state by model.state.collectAsStateWithLifecycle()
     var page by rememberSaveable { mutableStateOf(if(showPrivacy) "You" else initialPage) }
@@ -118,57 +118,66 @@ private fun hourLabel(hour:Double) = "%02d:%02d".format(hour.toInt(), ((hour%1)*
         }) { insets ->
             LazyColumn(state=listState, modifier=Modifier.fillMaxSize().padding(insets),
                 contentPadding=PaddingValues(start=22.dp,end=22.dp,top=8.dp,bottom=32.dp),
-                verticalArrangement=Arrangement.spacedBy(24.dp)) {
+                verticalArrangement=Arrangement.spacedBy(18.dp)) {
                 item { AppHeader(state.data.demo) { sheet="Connections" } }
                 item {
                     Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween,verticalAlignment=Alignment.CenterVertically) {
                         Column {
-                            Text(when(page) { "Today"->"Your day."; "Sleep"->"The night shift."; "Move"->"Built to move."; "Trends"->"The long view."; "Recovery"->"Ready, or reset."; else->"Make it yours." },
+                            Text(when(page) { "Today"->"Your day."; "Sleep"->"The night shift."; "Move"->"Built to move."; "Trends"->"The long view."; "Recovery"->"Ready, or reset."; else->"My health." },
                                 fontSize=32.sp,lineHeight=38.sp,letterSpacing=(-1.4).sp,fontWeight=FontWeight.Bold)
                             Row(Modifier.clip(RoundedCornerShape(6.dp)).clickable { datePicker=true }.padding(vertical=8.dp),verticalAlignment=Alignment.CenterVertically) {
                                 Text(state.selected.format(DateTimeFormatter.ofPattern("EEE, d MMM")).uppercase(),fontSize=10.sp,letterSpacing=1.4.sp,color=Muted,fontWeight=FontWeight.SemiBold)
                                 Icon(Icons.Outlined.ExpandMore,"Choose day",Modifier.padding(start=5.dp).size(16.dp),tint=Muted)
                             }
                         }
-                        IconButton(onClick={sheet="Check in"},modifier=Modifier.size(46.dp).border(1.dp,Border,CircleShape)) {
-                            Icon(Icons.Outlined.Add,"Check in",Modifier.size(22.dp),tint=Ink)
+                        IconButton(onClick={sheet="Settings"},modifier=Modifier.size(46.dp).border(1.dp,Border,CircleShape)) {
+                            Icon(Icons.Outlined.Tune,"Health settings",Modifier.size(22.dp),tint=Ink)
                         }
                     }
                 }
                 if(updateState.release!=null && page=="Today") item { AppUpdateBanner(updateState.release) { sheet="App updates" } }
                 when(page) {
                     "Today" -> {
-                        item { TodayActivity(day,state.prefs,{sheet="Preferences"},{page="Move"}) }
-                        item { TodayHeart(day,state.data.demo) { sheet="Metric:heartRateLatest" } }
-                        item { DataArrivalCard(state) { sheet="Connections" } }
-                        item { EnergyInstrument(energy,state.data.demo) { sheet="Body energy" } }
                         item {
-                            Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(23.dp)) {
-                                SupportingScore("Recovery",recovery,Olive,Modifier.weight(1f)) { sheet="Recovery score" }
-                                SupportingScore("Sleep",sleep,Purple,Modifier.weight(1f)) { sheet="Sleep score" }
-                            }
+                            var clock by remember { mutableStateOf(Instant.now()) }
+                            LaunchedEffect(state.watch.frame) { while(true) { clock=Instant.now();delay(1000) } }
+                            val direct=if(state.selected==LocalDate.now() && state.watch.enabled && !state.data.demo)state.watch.frame?.currentSteps(clock,ZoneId.systemDefault())else null
+                            TodayActivity(if(direct!=null)(day ?: HealthDay(state.selected)).copy(values=day?.values.orEmpty()+mapOf("steps" to direct))else day,state.prefs,{sheet="Preferences"},{page="Move"})
+                            if(direct!=null)Text("Step ring · direct watch count. Other rings · Samsung Health.",fontSize=9.sp,color=SignalCyan,modifier=Modifier.padding(top=7.dp))
                         }
-                        item { InsightCard(insight) { sheet="Daily insight" } }
+                        item { ScoreDashboard(sleep,recovery,energy) { sheet=it } }
+                        item { TodayHeart(day,state.data.demo,if(state.selected==LocalDate.now() && state.watch.enabled && !state.data.demo)state.watch.frame else null) { sheet="Metric:heartRateLatest" } }
+                        item { HealthSection("Vitals at a glance","Six signals · seven-day trends",SignalCyan,"All metrics ↗",{sheet="All metrics"}) {
+                            SignalGrid(state,listOf("restingHeartRate","hrv","spo2","respiratoryRate","skinTemperatureDelta","vo2Max"),SignalCyan) { sheet="Metric:$it" }
+                        } }
+                        item { DailyActivityTimeline(day) }
+                        item { HealthSection("Last night","Sleep & overnight physiology",SignalBlue,"Sleep ↗",{page="Sleep"}) {
+                            SignalGrid(state,listOf("sleepMinutes","sleepEfficiency","sleepHeartRate","sleepSpo2","sleepRespiratoryRate","napMinutes"),SignalBlue) { sheet="Metric:$it" }
+                        } }
+                        item { RecordedWorkouts(state) { sheet="Workout:$it" } }
+                        if(state.watch.enabled) item { DirectWatchCard(state.watch) { sheet="Direct watch" } }
+                        item { PersonalVitals(state) { sheet="Metric:$it" } }
                         item { EnergyCard(energy,state.data.demo) { sheet="Body energy" } }
-                        item { TodayMetrics(day,{sheet="Metric:$it"},{sheet="All metrics"}) }
-                        item { DaySummary(day,sleep,{page="Move"},{page="Sleep"}) }
-                        item { HydrationCard(state.water,state.prefs.waterGoal) { model.addWater(it) } }
-                        item { EditorialCard { sheet="Small habits" } }
+                        item { HealthSection("Body & metabolic health","Recorded measurements",SignalPink,"Health ↗",{page="You"}) {
+                            SignalGrid(state,listOf("weightKg","bodyFat","leanMassKg","systolic","diastolic","bloodGlucose"),SignalPink) { sheet="Metric:$it" }
+                        } }
+                        item { HealthSection("Nutrition & hydration","Samsung Health records",SignalOrange) {
+                            SignalGrid(state,listOf("dietaryCalories","proteinGrams","carbsGrams","fatGrams","fiberGrams","waterMl"),SignalOrange) { sheet="Metric:$it" }
+                        } }
+                        item { DataArrivalCard(state) { sheet="Connections" } }
                     }
                     "Sleep" -> {
                         item { SleepHero(day,sleep,state.prefs.sleepGoal) { sheet="Sleep score" } }
                         item { SleepCard(day,sleep) { sheet="Sleep score" } }
+                        item { SleepPatterns(state) }
                         item { WeeklyBars("Seven nights. One rhythm.","Sleep duration · goal ${duration(state.prefs.sleepGoal.toDouble())}",calendarDays(state.data.days,state.selected,7).map { it.date.dayOfWeek.toString().take(3) to it["sleepMinutes"] },Purple,state.prefs.sleepGoal.toDouble(),"min") }
                         item { SurfaceCard {
                             Heading("Overnight signals",Icons.Outlined.Air)
                             day?.get("napMinutes")?.let { InfoText("Recorded naps · ${duration(it)}") }
                             listOf(Triple("sleepSpo2","Sleeping oxygen","%"),Triple("sleepRespiratoryRate","Sleeping breathing rate","/min")).forEach { (key,label,unit)->MetricRow(label,day?.get(key),unit,Icons.Outlined.Air,null) };MetricRow("Recorded skin temperature",day?.get("skinTemperature"),"°C",Icons.Outlined.Thermostat,null);MetricRow("Skin temperature change",day?.get("skinTemperatureDelta"),"°C",Icons.Outlined.Thermostat,null)
                         } }
-                        item { SurfaceCard(color=Lavender) {
-                            Eyebrow("TONIGHT / ${state.prefs.bedtime}",Purple)
-                            Text("Switch off.\nSettle in.",fontSize=36.sp,lineHeight=39.sp,fontWeight=FontWeight.Bold,letterSpacing=(-1).sp,modifier=Modifier.padding(top=15.dp))
-                            InfoText("A consistent wind-down starts with a moment for yourself.")
-                            TextButton(onClick={sheet="Breathe"},contentPadding=PaddingValues(0.dp)) { Text("Start a breathing pause",color=Purple); Arrow(Purple) }
+                        item { HealthSection("All sleep signals","Details & trends",SignalBlue) {
+                            SignalGrid(state,listOf("sleepMinutes","sleepEfficiency","sleepCoverage","sleepHeartRate","sleepSpo2","sleepRespiratoryRate","skinTemperatureDelta","napMinutes"),SignalBlue) { sheet="Metric:$it" }
                         } }
                     }
                     "Recovery" -> {
@@ -182,47 +191,26 @@ private fun hourLabel(hour:Double) = "%02d:%02d".format(hour.toInt(), ((hour%1)*
                         } }
                     }
                     "Move" -> {
-                        item { MovementCard(day,state.prefs) { sheet="Log activity" } }
+                        item { TodayActivity(day,state.prefs,{sheet="Preferences"},{sheet="All metrics"}) }
+                        item { MovementMomentum(state) }
+                        item { DailyActivityTimeline(day) }
                         item { WeeklyBars("Momentum, day by day","Your goal · ${measurement(state.prefs.stepGoal.toDouble())} steps",calendarDays(state.data.days,state.selected,7).map { it.date.dayOfWeek.toString().take(3) to it["steps"] },Orange,state.prefs.stepGoal.toDouble(),"steps") }
-                        item { SurfaceCard {
-                            Heading("Your activity log",Icons.AutoMirrored.Outlined.DirectionsWalk)
-                            val logs=state.workouts.filter { it.date==state.selected }
-                            if(logs.isEmpty()) Text("Walk. Ride. Lift. Stretch.\nMake a note of what moved you.",fontSize=17.sp,lineHeight=26.sp,color=Muted,modifier=Modifier.padding(vertical=22.dp))
-                            logs.forEach { w -> Row(Modifier.fillMaxWidth().padding(vertical=15.dp),verticalAlignment=Alignment.CenterVertically) {
-                                Icon(Icons.AutoMirrored.Outlined.DirectionsWalk,null,tint=Orange)
-                                Column(Modifier.weight(1f).padding(horizontal=12.dp)) { Text(w.type,fontSize=15.sp,fontWeight=FontWeight.SemiBold); Text("${w.minutes} min · ${w.intensity} · manual",fontSize=11.sp,color=Muted) }
-                                IconButton(onClick={model.deleteWorkout(w.id)}) { Icon(Icons.Outlined.DeleteOutline,"Delete activity",Modifier.size(20.dp),tint=Muted) }
-                            } }
-                            Button(onClick={sheet="Log activity"},colors=ButtonDefaults.buttonColors(containerColor=Orange)) { Icon(Icons.Outlined.Add,null,Modifier.size(18.dp)); Text("Log activity",Modifier.padding(start=7.dp)) }
+                        item { HealthSection("Movement metrics","Distance · performance · energy",SignalOrange) {
+                            SignalGrid(state,listOf("distanceKm","floors","activeMinutes","speedKmh","maxSpeedKmh","powerWatts","maxPowerWatts","vo2Max","totalCalories"),SignalOrange) { sheet="Metric:$it" }
                         } }
+                        item { WorkoutHistory(state) { sheet="Workout:$it" } }
                     }
                     "Trends" -> item { TrendsScreen(state) }
                     "You" -> {
-                        item { SurfaceCard {
-                            Eyebrow("THE PART ONLY YOU KNOW",Olive)
-                            val entry=state.journals.find { it.date==state.selected }
-                            Text(entry?.let { "Feeling ${moodName(it.mood).lowercase()}." } ?: "More than\na number.",fontSize=38.sp,lineHeight=42.sp,letterSpacing=(-1.4).sp,fontWeight=FontWeight.Bold,modifier=Modifier.padding(vertical=22.dp))
-                            Text(entry?.note?.takeIf { it.isNotBlank() } ?: "Your watch captures the signals. You bring the context.",fontSize=14.sp,lineHeight=23.sp,color=Muted)
-                            Button(onClick={sheet="Check in"},modifier=Modifier.padding(top=22.dp)) { Text(if(entry==null)"Check in" else "Edit check-in"); Arrow(Background) }
+                        item { HealthSection("Every part of your health","${healthCatalog.size} supported measurements",SignalCyan,"Settings ↗",{sheet="Settings"}) {
+                            Text("Explore the readings, trends, and personal context behind your day.",fontSize=12.sp,lineHeight=20.sp,color=Muted)
                         } }
-                        item { HydrationCard(state.water,state.prefs.waterGoal) { model.addWater(it) } }
-                        if(state.journals.isNotEmpty()) item { SurfaceCard {
-                            Heading("Your journal",Icons.Outlined.EditNote)
-                            state.journals.sortedByDescending { it.date }.take(14).forEach { entry -> Column(Modifier.padding(top=21.dp)) {
-                                Text("${entry.date.format(DateTimeFormatter.ofPattern("d MMM"))} / ${moodName(entry.mood)}",fontSize=14.sp,fontWeight=FontWeight.SemiBold)
-                                Text(entry.note.ifBlank { "A moment to check in." },fontSize=13.sp,color=Muted,lineHeight=21.sp,modifier=Modifier.padding(top=7.dp))
-                                if(entry.habits.isNotEmpty()) Text(entry.habits.joinToString(" · "),fontSize=11.sp,color=Olive,modifier=Modifier.padding(top=8.dp))
-                                HorizontalDivider(Modifier.padding(top=20.dp),color=Border)
+                        item { PersonalVitals(state) { sheet="Metric:$it" } }
+                        listOf("Heart","Vitals","Body","Movement","Sleep","Nutrition").forEach { group->
+                            item { HealthSection(group,when(group){"Heart"->"Rate · rhythm · fitness";"Vitals"->"Oxygen · breathing · temperature";"Body"->"Composition · metabolic markers";"Movement"->"Daily activity & performance";"Sleep"->"Duration · stages · overnight signals";else->"Shared food & fluid intake"},when(group){"Heart","Body"->SignalPink;"Sleep"->SignalBlue;"Movement","Nutrition"->SignalOrange;else->SignalCyan}) {
+                                SignalGrid(state,healthCatalog.filter { it.group==group }.map { it.key },when(group){"Heart","Body"->SignalPink;"Sleep"->SignalBlue;"Movement","Nutrition"->SignalOrange;else->SignalCyan}) { sheet="Metric:$it" }
                             } }
-                        } }
-                        item { SurfaceCard {
-                            SettingsRow("Your watch & connections",if(state.connection.hasReadAccess)"Read access allowed" else "Connect Samsung Health",Icons.Outlined.Watch) { sheet="Connections" }
-                            SettingsRow("Your goals & preferences","Sleep, movement and hydration",Icons.Outlined.Tune) { sheet="Preferences" }
-                            SettingsRow("App updates",updateState.release?.let { "${it.versionName} available" } ?: "Forma ${BuildConfig.VERSION_NAME}",Icons.Outlined.SystemUpdate) { sheet="App updates" }
-                            SettingsRow("Privacy & your data","On this phone. In your control.",Icons.Outlined.Shield) { sheet="Privacy" }
-                            SettingsRow("How Forma estimates scores","Transparent, experimental models",Icons.Outlined.Info) { sheet="About scores" }
-                        } }
-                        item { EditorialCard { sheet="Small habits" } }
+                        }
                     }
                 }
                 item { Text(if(state.data.demo) "SAMPLE WATCH DATA / PERSONAL ESTIMATES" else "${if(state.data.source=="Samsung Health · Health Connect")"SAMSUNG HEALTH" else "IMPORTED RECORDS"} / ON-DEVICE ESTIMATES",fontSize=9.sp,letterSpacing=1.sp,color=Muted,modifier=Modifier.fillMaxWidth().padding(top=6.dp),textAlign=TextAlign.Center) }
@@ -231,21 +219,36 @@ private fun hourLabel(hour:Double) = "%02d:%02d".format(hour.toInt(), ((hour%1)*
         if(datePicker){val picker=rememberDatePickerState(initialSelectedDateMillis=state.selected.atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli(),selectableDates=object:SelectableDates{override fun isSelectableDate(utcTimeMillis:Long)=Instant.ofEpochMilli(utcTimeMillis).atZone(ZoneOffset.UTC).toLocalDate().let{it<=LocalDate.now()&&it>=state.data.days.first().date}});DatePickerDialog(onDismissRequest={datePicker=false},confirmButton={TextButton(onClick={picker.selectedDateMillis?.let{model.select(Instant.ofEpochMilli(it).atZone(ZoneOffset.UTC).toLocalDate())};datePicker=false}){Text("View day")}},dismissButton={TextButton(onClick={datePicker=false}){Text("Cancel")}}){DatePicker(picker)}}
         if(sheet.isNotBlank())ModalBottomSheet(onDismissRequest={sheet=""},containerColor=Panel,sheetState=rememberModalBottomSheetState(skipPartiallyExpanded=true)){
             Column(Modifier.fillMaxWidth().verticalScroll(remember(sheet) { ScrollState(0) }).padding(horizontal=24.dp).padding(bottom=34.dp),verticalArrangement=Arrangement.spacedBy(17.dp)){
-                Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically){Text(if(sheet.startsWith("Metric:"))healthCatalog.first { it.key==sheet.removePrefix("Metric:") }.label else sheet,fontSize=26.sp,fontWeight=FontWeight.Bold,modifier=Modifier.weight(1f));IconButton(onClick={sheet=""}){Icon(Icons.Outlined.Close,"Close sheet",Modifier.size(21.dp))}}
+                Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically){Text(if(sheet.startsWith("Metric:"))healthCatalog.first { it.key==sheet.removePrefix("Metric:") }.label else if(sheet.startsWith("Workout:"))"Workout details" else sheet,fontSize=26.sp,fontWeight=FontWeight.Bold,modifier=Modifier.weight(1f));IconButton(onClick={sheet=""}){Icon(Icons.Outlined.Close,"Close sheet",Modifier.size(21.dp))}}
                 when(sheet){
                     "Recovery score","Sleep score","Body energy"->{val score=when(sheet){"Recovery score"->recovery;"Sleep score"->sleep;else->energy.score};ScoreExplanation(sheet,score);if(sheet=="Recovery score")Button(onClick={sheet="";page="Recovery"},modifier=Modifier.fillMaxWidth()){Text("Explore your recovery")}}
                     "About scores"->ScoreExplanation(sheet,Score())
+                    "Settings"->{
+                        SettingsRow("Your watch & connections","Permissions, sync & direct watch data",Icons.Outlined.Watch) { sheet="Connections" }
+                        SettingsRow("Direct watch companion","Live heart-rate checks & daily activity",Icons.Outlined.Sensors) { sheet="Direct watch" }
+                        SettingsRow("Goals & targets","Activity rings, exercise and sleep",Icons.Outlined.Tune) { sheet="Preferences" }
+                        SettingsRow("App updates",updateState.release?.let { "${it.versionName} available" } ?: "Forma ${BuildConfig.VERSION_NAME}",Icons.Outlined.SystemUpdate) { sheet="App updates" }
+                        SettingsRow("Privacy & your data","Export, permissions and local storage",Icons.Outlined.Shield) { sheet="Privacy" }
+                        SettingsRow("How scores work","Transparent, experimental estimates",Icons.Outlined.Info) { sheet="About scores" }
+                        HorizontalDivider(color=Border)
+                        Text("Optional personal notes",fontSize=12.sp,color=Muted)
+                        SettingsRow("Journal","Add context when you want to",Icons.Outlined.EditNote) { sheet="Check in" }
+                        SettingsRow("Manual activity log","Separate from watch-recorded workouts",Icons.Outlined.FitnessCenter) { sheet="Manual activity" }
+                        HydrationCard(state.water,state.prefs.waterGoal) { model.addWater(it) }
+                    }
+                    "Manual activity"->{state.workouts.filter { it.date==state.selected }.forEach { w->Row(verticalAlignment=Alignment.CenterVertically) { Text("${w.type} · ${w.minutes} min · manual",Modifier.weight(1f),fontSize=13.sp);IconButton(onClick={model.deleteWorkout(w.id)}) { Icon(Icons.Outlined.DeleteOutline,"Delete activity") } } };Button(onClick={sheet="Log activity"}) { Text("Add manual activity") }}
                     "Check in"->CheckIn(state.journals.find{it.date==state.selected}){m,h,n->model.saveJournal(m,h,n);sheet=""}
                     "Log activity"->WorkoutForm{t,m,i->model.saveWorkout(t,m,i);sheet=""}
-                    "Connections"->WatchConnectionPanel(state,onConnect,{model.sync()},{model.cancelSync()},onHistory,onSamsungHealth,onWatchApp,onHealthSettings,{if(it)onBackground()else model.enableBackground(false)},onImport,onExport,{model.updatePrefs(state.prefs.copy(automaticSync=it))})
+                    "Direct watch"->DirectWatchSetup(state.watch,model::enableWatch,model::findWatch,onWatchDownload)
+                    "Connections"->{DirectWatchCard(state.watch) { sheet="Direct watch" };WatchConnectionPanel(state,onConnect,{model.sync()},{model.cancelSync()},onHistory,onSamsungHealth,onWatchApp,onHealthSettings,{if(it)onBackground()else model.enableBackground(false)},onImport,onExport,{model.updatePrefs(state.prefs.copy(automaticSync=it))})}
                     "App updates"->AppUpdatePanel(updateState,onCheckUpdates,onInstallUpdate,onCancelUpdate,onAutomaticUpdates,onInstallationSettings)
                     "All metrics"->MetricExplorer(state) { sheet="Metric:$it" }
                     "Preferences"->PreferencesForm(state.prefs,model::updatePrefs)
-                    "Privacy"->{InfoText("Forma reads selected Samsung Health records through Android’s Health Connect, only after you grant permission. Health records, journal entries and goals stay in this app’s private storage. No account, health-data cloud upload, or advertising SDK is used. Only app-update checks and APK downloads connect to GitHub; health records and journal entries never enter those requests. Android backup is disabled. Exports go only to the location you choose.");InfoText("Revoke permissions in phone Settings → Health Connect → App permissions → Forma. Background sync is optional. Clear local records below, or uninstall the app to remove local storage.");OutlinedButton(onClick=onExport,modifier=Modifier.fillMaxWidth()){Icon(Icons.Outlined.FileDownload,null,Modifier.size(18.dp));Text("Export health records",Modifier.padding(start=8.dp))};Text("Journal and hydration entries are currently stored locally and are not included in the health-record export.",fontSize=11.sp,color=Muted,lineHeight=18.sp);var confirm by remember{mutableStateOf(false)};TextButton(onClick={confirm=true}){Text("Clear all local Forma data",color=Color(0xFFAD6A59))};if(confirm)AlertDialog(onDismissRequest={confirm=false},title={Text("Clear local data?")},text={Text("This removes imported health records, your journal, workouts, hydration and preferences. Export your health records first if needed.")},confirmButton={TextButton(onClick={model.clearAll();confirm=false;sheet=""}){Text("Clear data")}},dismissButton={TextButton(onClick={confirm=false}){Text("Keep my data")}})}
+                    "Privacy"->{InfoText("Forma reads selected Samsung Health records through Android’s Health Connect, only after you grant permission. Health records, journal entries and goals stay in this app’s private storage. No account, health-data cloud upload, or advertising SDK is used. App-update checks and APK downloads connect to GitHub; health records and journal entries never enter those requests. The optional watch companion sends sensor readings through the encrypted Wear OS Data Layer, which can use Google’s encrypted relay when connectivity changes. Forma accepts nearby companion messages and keeps their latest readings in private local storage. Android backup is disabled. Exports go only to the location you choose.");InfoText("Revoke permissions in phone Settings → Health Connect → App permissions → Forma. Background sync is optional. Clear local records below, or uninstall the app to remove local storage.");OutlinedButton(onClick=onExport,modifier=Modifier.fillMaxWidth()){Icon(Icons.Outlined.FileDownload,null,Modifier.size(18.dp));Text("Export health records",Modifier.padding(start=8.dp))};Text("Journal and hydration entries are currently stored locally and are not included in the health-record export.",fontSize=11.sp,color=Muted,lineHeight=18.sp);var confirm by remember{mutableStateOf(false)};TextButton(onClick={confirm=true}){Text("Clear all local Forma data",color=Color(0xFFAD6A59))};if(confirm)AlertDialog(onDismissRequest={confirm=false},title={Text("Clear local data?")},text={Text("This removes imported health records, your journal, workouts, hydration and preferences. Export your health records first if needed.")},confirmButton={TextButton(onClick={model.clearAll();confirm=false;sheet=""}){Text("Clear data")}},dismissButton={TextButton(onClick={confirm=false}){Text("Keep my data")}})}
                     "Breathe"->BreathingPause()
                     "Daily insight"->{Heading(insight.title,Icons.Outlined.AutoAwesome);InfoText(insight.detail);InfoText("This describes the recorded signals and their personal context. It does not diagnose a condition or prescribe exercise. Measurement quality, medications, stress and sampling conditions can affect your readings.")}
                     "Small habits"->{HabitTip(Icons.Outlined.WbSunny,"Meet the morning","Take a brief moment outside after you wake up.");HabitTip(Icons.AutoMirrored.Outlined.DirectionsWalk,"Make movement easy","Add a comfortable walk to an existing part of your day.");HabitTip(Icons.Outlined.Bedtime,"Find your wind-down","Choose a bedtime you can return to, one evening at a time.");Button(onClick={sheet="Check in"},modifier=Modifier.fillMaxWidth()){Text("Notice a habit in your journal")}}
-                    else->if(sheet.startsWith("Metric:"))MetricDetail(state,sheet.removePrefix("Metric:"))
+                    else->if(sheet.startsWith("Metric:"))MetricDetail(state,sheet.removePrefix("Metric:")) else if(sheet.startsWith("Workout:"))WorkoutDetail(state,sheet.removePrefix("Workout:"))
 
                 }
             }
@@ -274,7 +277,7 @@ private fun hourLabel(hour:Double) = "%02d:%02d".format(hour.toInt(), ((hour%1)*
         Column(Modifier.navigationBarsPadding()) {
             HorizontalDivider(color=Border.copy(alpha=.65f))
             Row(Modifier.fillMaxWidth().height(72.dp)) {
-                listOf(Triple("Today",Icons.Outlined.Bolt,"Today"),Triple("Sleep",Icons.Outlined.Bedtime,"Sleep"),Triple("Move",Icons.AutoMirrored.Outlined.DirectionsWalk,"Move"),Triple("Trends",Icons.Outlined.BarChart,"Trends"),Triple("You",Icons.Outlined.PersonOutline,"You")).forEach { (name,image,label) ->
+                listOf(Triple("Today",Icons.Outlined.Bolt,"Today"),Triple("Sleep",Icons.Outlined.Bedtime,"Sleep"),Triple("Move",Icons.AutoMirrored.Outlined.DirectionsWalk,"Move"),Triple("Trends",Icons.Outlined.BarChart,"Trends"),Triple("You",Icons.Outlined.HealthAndSafety,"Health")).forEach { (name,image,label) ->
                     val selected=page==name || (page=="Recovery" && name=="Today")
                     Column(Modifier.weight(1f).fillMaxHeight().clickable(role=Role.Tab) { onPage(name) }.semantics { this.selected=selected },horizontalAlignment=Alignment.CenterHorizontally,verticalArrangement=Arrangement.Center) {
                         Icon(image,label,Modifier.size(24.dp),tint=if(selected)Olive else Muted)
@@ -665,13 +668,17 @@ private fun hourLabel(hour:Double) = "%02d:%02d".format(hour.toInt(), ((hour%1)*
 @Composable private fun TrendsScreen(state:FormaState) {
     var key by rememberSaveable { mutableStateOf("sleepMinutes") }
     var length by rememberSaveable { mutableIntStateOf(7) }
-    val options=healthCatalog.map { Triple(it.key,it.label,it.unit) }
-    val option=options.find { it.first==key }!!
+    var category by rememberSaveable { mutableStateOf("Sleep") }
+    val options=healthCatalog.filter { it.group==category }.map { Triple(it.key,it.label,it.unit) }
+    val option=healthCatalog.first { it.key==key }.let { Triple(it.key,it.label,it.unit) }
     val days=calendarDays(state.data.days,state.selected,length)
     val values=days.mapNotNull { it[key] }
     val average=values.takeIf { it.isNotEmpty() }?.average()
     val accent=when(key) { "sleepMinutes"->Purple; "steps"->Orange; else->Olive }
-    Column(verticalArrangement=Arrangement.spacedBy(24.dp)) {
+    Column(verticalArrangement=Arrangement.spacedBy(16.dp)) {
+        Row(Modifier.horizontalScroll(rememberScrollState()),horizontalArrangement=Arrangement.spacedBy(7.dp)) {
+            listOf("Sleep","Heart","Movement","Vitals","Body","Nutrition").forEach { group->FilterChip(selected=category==group,onClick={category=group;key=healthCatalog.first { it.group==group }.key},label={Text(group,fontSize=11.sp)}) }
+        }
         Row(Modifier.horizontalScroll(rememberScrollState()),horizontalArrangement=Arrangement.spacedBy(7.dp)) {
             options.forEach { (field,label,_) -> FilterChip(selected=key==field,onClick={key=field},shape=RoundedCornerShape(10.dp),
                 label={Text(label,fontSize=11.sp)},colors=FilterChipDefaults.filterChipColors(selectedContainerColor=Ink,selectedLabelColor=Background,containerColor=Panel,labelColor=Muted),border=null) }
@@ -689,10 +696,20 @@ private fun hourLabel(hour:Double) = "%02d:%02d".format(hour.toInt(), ((hour%1)*
                 if(key!="sleepMinutes") Text(" ${option.third}",fontSize=11.sp,color=Muted,modifier=Modifier.padding(bottom=7.dp))
             }
             Text("DAILY AVERAGE / $length DAYS",fontSize=9.sp,letterSpacing=1.2.sp,color=Muted,modifier=Modifier.padding(top=8.dp))
+            val earlier=calendarDays(state.data.days,state.selected.minusDays(length.toLong()),length).mapNotNull { it[key] }
+            val prior=earlier.takeIf { it.isNotEmpty() }?.average()
+            val decimals=healthCatalog.first { it.key==key }.decimals
+            Row(Modifier.fillMaxWidth().padding(top=18.dp),horizontalArrangement=Arrangement.spacedBy(10.dp)) {
+                OverviewFact("Lowest",measurement(values.minOrNull(),decimals),option.third,accent,Modifier.weight(1f))
+                OverviewFact("Highest",measurement(values.maxOrNull(),decimals),option.third,accent,Modifier.weight(1f))
+                OverviewFact("Recorded","${values.size}/$length","days",accent,Modifier.weight(1f))
+            }
+            if(average!=null && prior!=null)Text("${if(average>=prior)"+" else ""}${measurement(average-prior,decimals)} ${option.third} vs the preceding $length days · ${earlier.size} prior days recorded",fontSize=10.sp,lineHeight=18.sp,color=Muted,modifier=Modifier.padding(top=12.dp))
             if(values.isEmpty()) EmptyState("Not shared yet","Data availability depends on Samsung Health and your permissions.")
             else {
-                val low=(values.minOrNull()!!*.92).coerceAtLeast(0.0)
-                val high=max(values.maxOrNull()!!*1.08,low+1)
+                val padding=max((values.maxOrNull()!!-values.minOrNull()!!)*.12,.1)
+                val low=values.minOrNull()!!-padding
+                val high=values.maxOrNull()!!+padding
                 NativeLineChart(days.mapIndexed { i,d -> i.toDouble() to d[key] },low,high,accent,0.0,max(1,days.size-1).toDouble(),
                     listOf(0.0 to days.first().date.format(DateTimeFormatter.ofPattern("d MMM")),(days.size-1).toDouble() to days.last().date.format(DateTimeFormatter.ofPattern("d MMM"))),
                     pointLabel={index->days.getOrNull(index.toInt())?.date?.format(DateTimeFormatter.ofPattern("d MMM")) ?: ""},

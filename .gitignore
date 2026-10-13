@@ -4,6 +4,7 @@ dist/
 .openai/*.local.json
 test-results/
 android/.gradle/
+android/.kotlin/
 android/**/build/
 android/local.properties
 .android-test/

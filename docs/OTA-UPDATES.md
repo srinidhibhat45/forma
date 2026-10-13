@@ -4,7 +4,7 @@ Every successful push to `main` in [srinidhibhat45/forma](https://github.com/sri
 
 ## Phone experience
 
-Install the [latest APK](https://github.com/srinidhibhat45/forma/releases/latest/download/forma.apk) once to get the updater. Existing Forma previews can be upgraded in place. Open **You → App updates** to check immediately. Available releases also appear on Today.
+Install the [latest APK](https://github.com/srinidhibhat45/forma/releases/latest/download/forma.apk) once to get the updater. Existing Forma previews can be upgraded in place. Open **Health settings → App updates** to check immediately. Available releases also appear on Today.
 
 Automatic checks are enabled initially. While the app is open, checks are limited to once per 15 minutes; a background check is scheduled every six hours. Android may defer background work. You can turn automatic checks off and continue using manual checks. A push must finish building and publishing before the phone can discover it.
 
@@ -45,3 +45,6 @@ The opt-in `AppUpdateIntegrationTest` downloads the published release and checks
 The new Internet permission is used for version metadata and APK downloads only. Health records, journal entries, account credentials and watch measurements are never included in those requests. No GitHub authentication token is embedded in the APK. Health Connect permission handling stays separate. The installer has access only to the APK cache through a restricted FileProvider.
 
 A network failure leaves the installed app usable. Interrupted downloads can be retried. Failed integrity/signature checks cannot launch the installer. Disabling automatic checks cancels the background update job. If GitHub is rate-limiting the phone, wait and retry manually. Failed builds are visible in the repository’s Actions page; resolve the failure and push again.
+
+
+The workflow also builds/signs `forma-watch.apk`, publishes `watch-update.json` and its SHA-256 file. Both device apps share update verification code; each chooses its own asset and rejects APKs with a mismatched watch feature. Watch releases use the same dedicated key and package identity for Data Layer communication. The first watch installation is separate from the phone; see [the companion guide](WATCH-COMPANION.md). No silent native code replacement is claimed.

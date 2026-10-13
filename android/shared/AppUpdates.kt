@@ -89,7 +89,8 @@ class GitHubUpdates(private val context:Context) {
             require(matches.size==1) { "The release is missing its $name file." }
             return matches.single()
         }
-        val apk=asset("forma.apk");val metadata=asset("update.json")
+        val watch=context.packageManager.hasSystemFeature(PackageManager.FEATURE_WATCH)
+        val apk=asset(if(watch)"forma-watch.apk" else "forma.apk");val metadata=asset(if(watch)"watch-update.json" else "update.json")
         val metadataUrl=metadata.getString("browser_download_url")
         require(UpdatePolicy.releaseAssetUrl(metadataUrl)) { "Unexpected update metadata location." }
         UpdatePolicy.manifest(text(metadataUrl,64*1024)!!,apk.getString("browser_download_url"),apk.getLong("size"),release.getString("html_url"),release.optString("body"))
@@ -105,9 +106,10 @@ class GitHubUpdates(private val context:Context) {
         val hex=digest.digest().joinToString("") { "%02x".format(it.toInt() and 255) }
         require(hex==release.sha256) { "Update integrity check failed. Download it again." }
         val manager=context.packageManager
-        val archive=manager.getPackageArchiveInfo(file.absolutePath,PackageManager.GET_SIGNING_CERTIFICATES)
+        val archive=manager.getPackageArchiveInfo(file.absolutePath,PackageManager.GET_SIGNING_CERTIFICATES or PackageManager.GET_CONFIGURATIONS)
             ?: throw IllegalArgumentException("Android couldn’t verify this APK.")
         require(archive.packageName==context.packageName && archive.longVersionCode==release.versionCode.toLong()) { "The APK doesn’t match this Forma release." }
+        require(archive.reqFeatures.orEmpty().any { it.name==PackageManager.FEATURE_WATCH }==manager.hasSystemFeature(PackageManager.FEATURE_WATCH)) { "This APK is for a different device type." }
         val installed=manager.getPackageInfo(context.packageName,PackageManager.GET_SIGNING_CERTIFICATES).signingInfo
         val candidate=archive.signingInfo
         require(installed!=null && candidate!=null && !installed.hasMultipleSigners() && !candidate.hasMultipleSigners()) { "Unexpected APK signing identity." }

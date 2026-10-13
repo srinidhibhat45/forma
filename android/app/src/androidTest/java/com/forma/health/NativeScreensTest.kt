@@ -43,15 +43,14 @@ class NativeScreensTest {
     }
     @Test fun energyCalculationOpensFromInstrument() {
         render("Today","Your day.","forma-energy-preview.png")
-        compose.onNode(hasScrollToIndexAction()).performScrollToNode(hasContentDescription("How body energy is estimated"))
-        compose.onNodeWithContentDescription("How body energy is estimated").performClick()
+        compose.onNodeWithText("Energy").performClick()
         compose.onNodeWithText("Body energy").assertIsDisplayed()
         compose.onNodeWithText("Starting energy",substring=true).performScrollTo().assertIsDisplayed()
     }
     @Test fun connectionPanelHasOneAccessFlowAndDirectSharingLinks() {
         render("You","Your watch.\nYour rhythm.","forma-connections.png",sheet="Connections")
-        compose.onNodeWithText("Samsung Health").assertIsDisplayed()
-        compose.onNodeWithText("Galaxy Wearable").assertIsDisplayed()
+        compose.onNodeWithText("Samsung Health").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Galaxy Wearable").performScrollTo().assertIsDisplayed()
         compose.onNodeWithText("Allow access & connect").performScrollTo().assertIsDisplayed()
     }
     @Test fun allMetricsSearchAndHistoryOpen() {
@@ -89,7 +88,7 @@ class NativeScreensTest {
     @Test fun sleepRenders(){render("Sleep","The night shift.","forma-sleep.png")}
     @Test fun activityRenders(){render("Move","Built to move.","forma-move.png")}
     @Test fun trendsRender(){render("Trends","The long view.","forma-trends.png")}
-    @Test fun personalSpaceRenders(){render("You","Make it yours.","forma-you.png")}
+    @Test fun personalSpaceRenders(){render("You","My health.","forma-you.png")}
     @Test fun recoveryRenders(){render("Recovery","Ready, or reset.","forma-recovery.png")}
     @Test fun updateActionsReflectDownloadAndCancellation() {
         val app=InstrumentationRegistry.getInstrumentation().targetContext.applicationContext as Application

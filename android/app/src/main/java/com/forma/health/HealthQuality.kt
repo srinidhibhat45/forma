@@ -7,7 +7,7 @@ data class SyncReport(
     val granted:Set<String> = emptySet(), val historyAllowed:Boolean=false,
     val scannedFrom:LocalDate?=null, val historyComplete:Boolean=false,
     val latestRecordAt:Instant?=null, val devices:List<String> = emptyList(),
-    val issues:List<String> = emptyList()
+    val issues:List<String> = emptyList(),val dataVersion:Int=2
 )
 data class SyncProgress(val label:String="",val completedDays:Int=0,val totalDays:Int=0)
 data class ObservedInsight(val title:String,val detail:String)
@@ -93,12 +93,13 @@ object PersonalSignals {
     const val MIN_BASELINE_DAYS=7
     fun baseline(days:List<HealthDay>,date:LocalDate,key:String):PersonalBaseline? {
         val logged=key=="hrv"
-        val range=when(key) { "hrv"->1.0..500.0;"restingHeartRate","sleepHeartRate"->20.0..220.0;else->return null }
+        val range=when(key) { "hrv"->1.0..500.0;"restingHeartRate","sleepHeartRate"->20.0..220.0;"respiratoryRate","sleepRespiratoryRate"->3.0..60.0;"spo2","sleepSpo2"->50.0..100.0;"skinTemperature"->20.0..45.0;"skinTemperatureDelta"->-20.0..20.0;else->return null }
         val values=days.filter { it.date<date && it.date>=date.minusDays(28) }.distinctBy { it.date }.mapNotNull { it[key] }
             .filter { it.isFinite() && it in range }.map { if(logged)ln(it)else it }
         if(values.size<MIN_BASELINE_DAYS)return null
         val center=HealthQuality.median(values)!!
         val mad=HealthQuality.median(values.map { abs(it-center) })!!*1.4826
-        return PersonalBaseline(center,max(mad,if(logged).1 else 3.0),values.size,logged)
+        val floor=when(key) { "hrv"->.1;"respiratoryRate","sleepRespiratoryRate","spo2","sleepSpo2"->1.0;"skinTemperature","skinTemperatureDelta"->.15;else->3.0 }
+        return PersonalBaseline(center,max(mad,floor),values.size,logged)
     }
 }
