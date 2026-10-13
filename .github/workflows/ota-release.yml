@@ -1,0 +1,68 @@
+name: Build and publish Forma update
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: forma-ota-releases
+  cancel-in-progress: false
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@ed408507eac070d1f99cc633dbcf757c94c7933a # v4
+      - name: Prepare Android SDK
+        run: sdkmanager 'platforms;android-36' 'build-tools;36.0.0'
+      - name: Choose update version
+        id: version
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/next-version.py
+      - name: Test, check and build native app
+        working-directory: android
+        env:
+          FORMA_VERSION_CODE: ${{ steps.version.outputs.code }}
+          FORMA_VERSION_NAME: ${{ steps.version.outputs.name }}
+        run: >-
+          ./gradlew --no-daemon :app:testDebugUnitTest :app:lintDebug :app:assembleRelease
+          -PformaVersionCode="$FORMA_VERSION_CODE" -PformaVersionName="$FORMA_VERSION_NAME"
+      - name: Sign the update
+        env:
+          FORMA_KEYSTORE_BASE64: ${{ secrets.FORMA_KEYSTORE_BASE64 }}
+          FORMA_STORE_PASSWORD: ${{ secrets.FORMA_STORE_PASSWORD }}
+          FORMA_KEY_PASSWORD: ${{ secrets.FORMA_KEY_PASSWORD }}
+        run: |
+          test -n "$FORMA_KEYSTORE_BASE64"
+          export FORMA_KEYSTORE="$RUNNER_TEMP/forma-release.p12"
+          printf '%s' "$FORMA_KEYSTORE_BASE64" | base64 --decode > "$FORMA_KEYSTORE"
+          chmod 600 "$FORMA_KEYSTORE"
+          scripts/sign-apk.sh android/app/build/outputs/apk/release/app-release-unsigned.apk release/forma.apk
+      - name: Write verified update manifest
+        env:
+          FORMA_VERSION_CODE: ${{ steps.version.outputs.code }}
+          FORMA_VERSION_NAME: ${{ steps.version.outputs.name }}
+        run: python3 scripts/release-manifest.py release/forma.apk "$FORMA_VERSION_CODE" "$FORMA_VERSION_NAME"
+      - name: Publish the update
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FORMA_TAG: ${{ steps.version.outputs.tag }}
+          FORMA_VERSION_NAME: ${{ steps.version.outputs.name }}
+          FORMA_VERSION_CODE: ${{ steps.version.outputs.code }}
+        run: |
+          printf '%s\n' 'The latest Forma changes, built automatically from main.' '' 'Your local health records stay on your phone when you update.' > release/notes.md
+          gh release create "$FORMA_TAG" release/forma.apk release/update.json release/forma.apk.sha256 \
+            --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
+            --title "Forma $FORMA_VERSION_NAME · build $FORMA_VERSION_CODE" --notes-file release/notes.md --latest
+      - name: Remove signing material from runner
+        if: always()
+        run: rm -f "$RUNNER_TEMP/forma-release.p12"

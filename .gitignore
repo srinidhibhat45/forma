@@ -1,0 +1,23 @@
+node_modules/
+dist/
+.DS_Store
+.openai/*.local.json
+test-results/
+android/.gradle/
+android/**/build/
+android/local.properties
+.android-test/
+
+# Never publish signing keys, local outputs, hosting metadata or machine settings.
+.local-signing/
+output/
+.openai/
+*.keystore
+*.jks
+*.p12
+*.apk
+*.idsig
+.env
+.env.*
+.idea/
+release/
