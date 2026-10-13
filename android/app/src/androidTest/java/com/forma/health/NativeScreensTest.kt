@@ -25,7 +25,7 @@ class NativeScreensTest {
         compose.waitForIdle()
         val folder=InstrumentationRegistry.getArguments().getString("additionalTestOutputDir")?.let(::File) ?: File(app.getExternalFilesDir(null),"screenshots")
         folder.mkdirs()
-        File(folder,fileName).outputStream().use{compose.onAllNodes(isRoot()).onLast().captureToImage().asAndroidBitmap().compress(Bitmap.CompressFormat.PNG,100,it)}
+        File(folder,fileName).outputStream().use{compose.onNode(isRoot() and hasAnyDescendant(hasText(heading))).captureToImage().asAndroidBitmap().compress(Bitmap.CompressFormat.PNG,100,it)}
     }
     @Test fun rangeAndPointInspectionWork() {
         render("Trends","The long view.","forma-trends-interaction.png")
