@@ -7,7 +7,7 @@ data class SyncReport(
     val granted:Set<String> = emptySet(), val historyAllowed:Boolean=false,
     val scannedFrom:LocalDate?=null, val historyComplete:Boolean=false,
     val latestRecordAt:Instant?=null, val devices:List<String> = emptyList(),
-    val issues:List<String> = emptyList(),val dataVersion:Int=2
+    val issues:List<String> = emptyList(),val dataVersion:Int=3
 )
 data class SyncProgress(val label:String="",val completedDays:Int=0,val totalDays:Int=0)
 data class ObservedInsight(val title:String,val detail:String)
@@ -20,6 +20,13 @@ data class TimedStage(val start:Instant,val end:Instant,val name:String)
 data class SleepSummary(val stages:List<SleepStage>,val asleepMinutes:Double,val coverage:Double,val efficiency:Double?,val intervals:List<TimedStage>)
 
 object HealthQuality {
+    /** Anchor at the actual wake time; neither overnight steps nor the first waking hour are lost. */
+    fun postWakeWindows(wake:Instant,end:Instant):List<Pair<Instant,Instant>> {
+        if(end<=wake)return emptyList()
+        require(Duration.between(wake,end)<=Duration.ofHours(26))
+        return generateSequence(wake) { it.plusSeconds(3600) }.takeWhile { it<end }
+            .map { it to minOf(it.plusSeconds(3600),end) }.toList()
+    }
     fun recentStart(today:LocalDate,lastSync:Instant?,zone:ZoneId):LocalDate =
         minOf(today.minusDays(2),lastSync?.atZone(zone)?.toLocalDate()?.minusDays(1) ?: today.minusDays(2)).coerceAtLeast(today.minusDays(364))
 

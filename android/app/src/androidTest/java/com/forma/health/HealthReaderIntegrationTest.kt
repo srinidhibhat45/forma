@@ -7,6 +7,8 @@ import androidx.health.connect.client.records.*
 import androidx.health.connect.client.records.metadata.*
 import androidx.health.connect.client.request.*
 import androidx.health.connect.client.response.*
+import androidx.health.connect.client.aggregate.*
+import androidx.health.connect.client.time.TimeRangeFilter
 import androidx.test.platform.app.InstrumentationRegistry
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.*
@@ -19,8 +21,12 @@ class HealthReaderIntegrationTest {
     private val now=Instant.now()
     private val today=LocalDate.now()
     private val origin=DataOrigin("com.sec.android.app.shealth")
+    // SDK 1.1 hides aggregation-request accessors; inspect only our injected test requests.
+    @Suppress("UNCHECKED_CAST")
+    private fun <T> aggregateParameter(request:AggregateGroupByDurationRequest,key:String):T =
+        request.javaClass.getDeclaredField(key).apply { isAccessible=true }.get(request) as T
     private fun step(at:Instant)=StepsRecord(at.minusSeconds(60),null,at,null,100,Metadata.manualEntry())
-    private fun reader(changes:Map<String,ChangesResponse> = emptyMap(),records:List<Record> = emptyList(),onRead:(ReadRecordsRequest<*>)->Unit={}):HealthReader {
+    private fun reader(changes:Map<String,ChangesResponse> = emptyMap(),records:List<Record> = emptyList(),onRead:(ReadRecordsRequest<*>)->Unit={},onHours:(AggregateGroupByDurationRequest)->List<AggregationResultGroupedByDuration> = {emptyList()}):HealthReader {
         val permissions=setOf(HealthPermission.getReadPermission(SleepSessionRecord::class),HealthPermission.getReadPermission(HeartRateRecord::class))+records.map { HealthPermission.getReadPermission(it::class) }
         val controller=object:PermissionController {
             override suspend fun getGrantedPermissions()=permissions
@@ -33,7 +39,9 @@ class HealthReaderIntegrationTest {
                 "getFeatures"->features
                 "getChanges"->changes.getValue(args!![0] as String)
                 "getChangesToken"->{ val request=args!![0] as ChangesTokenRequest;assertEquals(setOf(origin),request.dataOriginFilters);"checkpoint" }
-                "aggregateGroupByDuration","aggregateGroupByPeriod"->emptyList<Any>()
+                "aggregateGroupByDuration"->{val request=args!![0] as AggregateGroupByDurationRequest;assertEquals(setOf(origin),aggregateParameter<Set<DataOrigin>>(request,"dataOriginFilter"));onHours(request)}
+                "aggregateGroupByPeriod"->emptyList<Any>()
+                "aggregate"->AggregationResult(emptyMap(),emptyMap(),emptySet())
                 "readRecords"->{
                     val request=args!![0] as ReadRecordsRequest<*>;onRead(request)
                     assertEquals(setOf(origin),request.dataOriginFilter)
@@ -48,6 +56,51 @@ class HealthReaderIntegrationTest {
             }
         } as HealthConnectClient
         return HealthReader(InstrumentationRegistry.getInstrumentation().targetContext,fake)
+    }
+    @Test fun aWalkInTheWakingHourReachesEnergyWithoutIncludingPreWakeMeasurements()=runBlocking {
+        val date=today.minusDays(1);val midnight=date.atStartOfDay(ZoneId.systemDefault()).toInstant();val wake=midnight.plusSeconds(8*3600+20*60)
+        val start=wake.minusSeconds(8*3600)
+        val sleep=SleepSessionRecord(start,null,wake,null,Metadata.manualEntry(),stages=listOf(SleepSessionRecord.Stage(start,wake,SleepSessionRecord.STAGE_TYPE_SLEEPING)))
+        val steps=StepsRecord(wake.plusSeconds(300),null,wake.plusSeconds(1200),null,2000,Metadata.manualEntry())
+        val exercise=ExerciseSessionRecord(wake.plusSeconds(300),null,wake.plusSeconds(1200),null,Metadata.manualEntry(),ExerciseSessionRecord.EXERCISE_TYPE_WALKING)
+        val resting=RestingHeartRateRecord(wake,null,60,Metadata.manualEntry())
+        var postWakeQueries=0
+        val result=reader(records=listOf(sleep,steps,exercise,resting),onHours={ request->
+            val range=aggregateParameter<TimeRangeFilter>(request,"timeRangeFilter")
+            if(range.startTime==wake) {
+                postWakeQueries++;assertEquals(date.plusDays(1).atStartOfDay(ZoneId.systemDefault()).toInstant(),range.endTime)
+                listOf(AggregationResultGroupedByDuration(AggregationResult(mapOf(StepsRecord.COUNT_TOTAL.metricKey to 2000L,HeartRateRecord.BPM_AVG.metricKey to 110L),emptyMap(),setOf(origin)),wake,wake.plusSeconds(3600),ZoneOffset.UTC))
+            }else emptyList()
+        }).sync()
+        val day=result.days.first { it.date==date };val sample=day.samples.single()
+        assertEquals(1,postWakeQueries);assertEquals(2000.0,sample.steps!!,.001);assertEquals(15.0,sample.activeMinutes!!,.001)
+        assertEquals(110.0,sample.heartRate!!,.001);assertEquals(wake.plusSeconds(3600),sample.recordedAt)
+        val previous=(1..14).map { HealthDay(date.minusDays(it.toLong()),mapOf("restingHeartRate" to 60.0)) }
+        val energy=Scores.energy(day,previous,480)
+        assertEquals(3.0,energy.points.first().second-energy.points.last().second,.001)
+    }
+    @Test fun recordedExerciseCanUpdateEnergyEvenWhenHourlyHeartAndStepsAreNotShared()=runBlocking {
+        val date=today.minusDays(1);val wake=date.atStartOfDay(ZoneId.systemDefault()).toInstant().plusSeconds(8*3600+20*60)
+        val start=wake.minusSeconds(8*3600)
+        val sleep=SleepSessionRecord(start,null,wake,null,Metadata.manualEntry(),stages=listOf(SleepSessionRecord.Stage(start,wake,SleepSessionRecord.STAGE_TYPE_SLEEPING)))
+        val exercise=ExerciseSessionRecord(wake.plusSeconds(300),null,wake.plusSeconds(900),null,Metadata.manualEntry(),ExerciseSessionRecord.EXERCISE_TYPE_WALKING)
+        val resting=RestingHeartRateRecord(wake,null,60,Metadata.manualEntry())
+        val day=reader(records=listOf(sleep,exercise,resting)).sync().days.first { it.date==date }
+        assertEquals(10.0,day.samples.single().activeMinutes!!,.001)
+        assertNull(day.samples.single().steps);assertNull(day.samples.single().heartRate)
+        val previous=(1..14).map { HealthDay(date.minusDays(it.toLong()),mapOf("restingHeartRate" to 60.0)) }
+        val energy=Scores.energy(day,previous,480)
+        assertEquals(1.6,energy.points.first().second-energy.points.last().second,.001)
+    }
+    @Test fun olderCacheVersionRebuildsAllowedHistoryOnceAndCurrentVersionUsesRecentReads()=runBlocking {
+        val granted=setOf(HealthPermission.getReadPermission(SleepSessionRecord::class),HealthPermission.getReadPermission(HeartRateRecord::class))
+        val old=HealthData("Samsung Health · Health Connect",listOf(HealthDay(today.minusDays(10),mapOf("sleepMinutes" to 480.0))),now,report=SyncReport(granted,scannedFrom=today.minusDays(28),historyComplete=true,dataVersion=2))
+        val starts=mutableListOf<Instant>()
+        val upgraded=reader(onRead={starts.add(it.timeRangeFilter.startTime!!)}).sync(old)
+        assertEquals(3,upgraded.report!!.dataVersion)
+        assertTrue(starts.min()<=today.minusDays(28).atStartOfDay(ZoneId.systemDefault()).toInstant())
+        starts.clear();reader(onRead={starts.add(it.timeRangeFilter.startTime!!)}).sync(upgraded)
+        assertTrue(starts.min()>=today.minusDays(3).atStartOfDay(ZoneId.systemDefault()).toInstant())
     }
     @Test fun changedRecentRecordsAvoidHistoricalScanButLaterPagesStillReconcileOldCorrections()=runBlocking {
         val first=ChangesResponse(listOf(UpsertionChange(step(now.minusSeconds(600)))),"next",true,false)

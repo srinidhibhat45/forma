@@ -8,6 +8,7 @@ import androidx.health.connect.client.records.*
 import androidx.health.connect.client.records.metadata.DataOrigin
 import androidx.health.connect.client.records.metadata.Device
 import androidx.health.connect.client.request.*
+import androidx.health.connect.client.aggregate.AggregationResultGroupedByDuration
 import androidx.health.connect.client.time.TimeRangeFilter
 import kotlinx.coroutines.*
 import java.time.*
@@ -83,7 +84,7 @@ class HealthReader(private val context:Context,private val injectedClient:Health
         val first=today.minusDays(2)
         val catchupFrom=HealthQuality.recentStart(today,original?.syncedAt,zone).coerceAtLeast(target)
         val previous=original?.report
-        val reset=fullHistory || previous?.dataVersion!=2 || previous?.granted!=granted || previous?.historyAllowed!=history
+        val reset=fullHistory || previous?.dataVersion!=SyncReport().dataVersion || previous?.granted!=granted || previous?.historyAllowed!=history
         var data=original ?: HealthData("Samsung Health · Health Connect",emptyList())
         var cursor=if(reset)first else minOf(previous?.scannedFrom ?: first,first)
         var catchingUp=catchupFrom<first
@@ -223,6 +224,19 @@ class HealthReader(private val context:Context,private val injectedClient:Health
         }
         val exerciseIntervals=exercises.map { it.startTime to it.endTime }
         fun Instant.date()=atZone(zone).toLocalDate()
+        val energyMetrics=metrics.filter { it==StepsRecord.COUNT_TOTAL || it==HeartRateRecord.BPM_AVG }.toSet()
+        val energyHours=mutableMapOf<LocalDate,List<AggregationResultGroupedByDuration>>()
+        for(night in primaryNights.filter { it.endTime.date() in first..last }) {
+            currentCoroutineContext().ensureActive()
+            val date=night.endTime.date();val end=minOf(date.plusDays(1).atStartOfDay(zone).toInstant(),now)
+            if(night.endTime<end && energyMetrics.isNotEmpty()) {
+                // Query from wake itself. Dropping the overlapping civil-hour bucket used to
+                // discard post-wake activity; prorating a whole bucket would invent its timing.
+                energyHours[date]=client.aggregateGroupByDuration(AggregateGroupByDurationRequest(
+                    energyMetrics,TimeRangeFilter.between(night.endTime,end),Duration.ofHours(1),dataOriginFilter=samsung))
+                delay(100)
+            }
+        }
         val days=generateSequence(first) { it.plusDays(1) }.takeWhile { it<=last }.map { date->
             val values=mutableMapOf<String,Double>()
             val meals=nutrition.filter { it.startTime.atZone(zone).toLocalDate()==date }
@@ -271,10 +285,12 @@ class HealthReader(private val context:Context,private val injectedClient:Health
             val a=date.atStartOfDay(zone).toInstant();val b=minOf(date.plusDays(1).atStartOfDay(zone).toInstant(),now)
             if(exerciseIntervals.any { it.first<b && it.second>a })values["activeMinutes"]=HealthQuality.unionMinutes(exerciseIntervals,a,b)
             val wake=night?.endTime
-            val samples=if(wake==null)emptyList()else hours.filter { it.startTime>=wake && it.startTime.date()==date && it.endTime<=now }.mapNotNull { h->
-                val steps=h.result[StepsRecord.COUNT_TOTAL]?.toDouble();val heart=h.result[HeartRateRecord.BPM_AVG]?.toDouble()
-                val minutes=HealthQuality.unionMinutes(exerciseIntervals,h.startTime,h.endTime)
-                if(steps==null && heart==null && minutes==0.0)null else EnergySample(Duration.between(a,h.endTime).toMillis()/3600000.0,steps,minutes.takeIf { it>0 },heartRate=heart,durationMinutes=Duration.between(h.startTime,h.endTime).toMillis()/60000.0,recordedAt=h.endTime)
+            val samples=if(wake==null)emptyList()else HealthQuality.postWakeWindows(wake,b).mapNotNull { (from,to)->
+                val h=energyHours[date]?.firstOrNull { it.startTime==from }
+                val steps=h?.result?.get(StepsRecord.COUNT_TOTAL)?.toDouble()?.takeIf { HealthJson.validMeasurement("steps",it) }
+                val heart=h?.result?.get(HeartRateRecord.BPM_AVG)?.toDouble()?.takeIf { HealthJson.validMeasurement("heartRateAverage",it) }
+                val minutes=HealthQuality.unionMinutes(exerciseIntervals,from,to)
+                if(steps==null && heart==null && minutes==0.0)null else EnergySample(Duration.between(a,to).toMillis()/3600000.0,steps,minutes.takeIf { it>0 },heartRate=heart,durationMinutes=Duration.between(from,to).toMillis()/60000.0,recordedAt=to)
             }
             val valid=values.filter { (key,value)->HealthJson.validMeasurement(key,value).also { if(!it)issues.add("Some $key records were outside the supported measurement range.") } }
             val activity=hours.filter { it.startTime.date()==date }.mapNotNull { h->val steps=h.result[StepsRecord.COUNT_TOTAL]?.toDouble()?.takeIf { HealthJson.validMeasurement("steps",it) };val cal=h.result[ActiveCaloriesBurnedRecord.ACTIVE_CALORIES_TOTAL]?.inKilocalories?.takeIf { HealthJson.validMeasurement("activeCalories",it) };val exercise=HealthQuality.unionMinutes(exerciseIntervals,h.startTime,h.endTime).takeIf { it>0 };if(steps==null && cal==null && exercise==null)null else ActivityHour(h.startTime,steps,cal,exercise) }

@@ -87,7 +87,7 @@ class FormaViewModel(app:Application):AndroidViewModel(app) {
         val connection=reader.connection();_state.update { it.copy(connection=connection) }
         if(!connection.hasReadAccess)return
         val saved=store.health();val checkpoint=store.checkpoint()
-        val incomplete=saved?.report?.historyComplete!=true || saved.report.dataVersion!=2
+        val incomplete=saved?.report?.historyComplete!=true || saved.report.dataVersion!=SyncReport().dataVersion
         val newDay=saved?.syncedAt?.atZone(ZoneId.systemDefault())?.toLocalDate()!=LocalDate.now()
         val scopeChanged=checkpoint==null || checkpoint.second!=reader.changeScope()
         if(incomplete || newDay || scopeChanged) { sync(automatic=true);return }

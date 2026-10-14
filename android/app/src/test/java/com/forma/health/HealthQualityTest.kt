@@ -5,6 +5,20 @@ import org.junit.Test
 import java.time.*
 
 class HealthQualityTest {
+    @Test fun wakingHourStartsAtWakeAndTheLatestPartialWindowIsClipped() {
+        val wake=Instant.parse("2026-10-14T08:20:00Z");val end=Instant.parse("2026-10-14T09:45:00Z")
+        val windows=HealthQuality.postWakeWindows(wake,end)
+        assertEquals(listOf(wake to wake.plusSeconds(3600),wake.plusSeconds(3600) to end),windows)
+        assertEquals(25,Duration.between(windows.last().first,windows.last().second).toMinutes())
+        assertTrue(HealthQuality.postWakeWindows(wake,wake).isEmpty())
+    }
+    @Test fun wakingWindowsCoverRepeatedDstHourOnceAndDoNotUseClockLabelsAsTime() {
+        val zone=ZoneId.of("America/New_York");val date=LocalDate.of(2026,11,1)
+        val wake=date.atStartOfDay(zone).toInstant();val end=date.plusDays(1).atStartOfDay(zone).toInstant()
+        val windows=HealthQuality.postWakeWindows(wake,end)
+        assertEquals(25,windows.size);assertEquals(25L,windows.sumOf { Duration.between(it.first,it.second).toHours() })
+        assertTrue(windows.zipWithNext().all { (a,b)->a.second==b.first });assertEquals(end,windows.last().second)
+    }
     private val start=Instant.parse("2026-10-12T22:00:00Z")
     private fun at(minutes:Long)=start.plusSeconds(minutes*60)
     private fun stage(a:Long,b:Long,name:String)=TimedStage(at(a),at(b),name)

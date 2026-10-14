@@ -33,6 +33,8 @@ Activity-based body energy starts from readiness, takes the strongest overlappin
 
 The three displayed integers can match because the calculations share inputs and round to whole points. In 1.4.1, tapping a score explains the actual matching values, shows normalized contributing weights and the activity window timestamp, and offers **Copy score details**. This copies only the selected date's score inputs and calculation details to the local clipboard; it does not send them anywhere. Energy changes smaller than half a point may be hidden by rounding. Today's energy is flagged as waiting for newer activity if its recorded window is over two hours old; historical days are not incorrectly treated as current stale readings. Direct companion readings still do not enter the historical score model.
 
+In 1.4.2, energy aggregation begins at the actual wake time rather than dropping the whole civil-hour bucket that overlaps waking. No whole-hour totals are prorated. Exercise intervals are also retained when the hourly step/heart aggregate is absent. The final partial bucket stops at the query end and scales heart load to its actual duration. Cache data version 3 triggers one reconciliation of allowed history so previously omitted waking-hour activity can be recovered; subsequent unchanged refreshes use the existing incremental path.
+
 Samsung's proprietary sleep/energy scores, raw ECG and PPG are not available through this adapter. Samsung Health Data SDK would need a separate implementation and Samsung's applicable app-verification/partnership process; it is not implemented here.
 
 ## Verification boundary

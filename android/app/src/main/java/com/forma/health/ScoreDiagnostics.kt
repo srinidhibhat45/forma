@@ -25,8 +25,10 @@ object ScoreDiagnostics {
         else recorded
     }
     fun report(day:HealthDay?,sleep:Score,recovery:Score,energy:EnergyResult,goal:Int,source:String):String=buildString {
-        appendLine("Forma score details · ${day?.date ?: "no selected day"}")
+        appendLine("Forma ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE}) score details · ${day?.date ?: "no selected day"}")
         appendLine("Source: $source · sleep goal: $goal minutes")
+        appendLine("Sleep starts (ISO): ${day?.sleepStart ?: "not shared"}")
+        appendLine("Sleep ends (ISO): ${day?.sleepEnd ?: "not shared"}")
         fun score(label:String,s:Score) {
             appendLine("$label: ${s.value ?: "unavailable"}/100 · ${s.confidence}")
             val total=s.factors.sumOf { it.weight }
