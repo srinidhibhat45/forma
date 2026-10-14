@@ -48,13 +48,14 @@ class NativeScreensTest {
         compose.onNodeWithText("Starting energy",substring=true).performScrollTo().assertIsDisplayed()
     }
     @Test fun connectionPanelHasOneAccessFlowAndDirectSharingLinks() {
-        render("You","Your watch.\nYour rhythm.","forma-connections.png",sheet="Connections")
-        compose.onNodeWithText("Samsung Health").performScrollTo().assertIsDisplayed()
+        render("You","Devices","forma-connections.png",sheet="Connections")
+        compose.onNodeWithText("Help with syncing").performScrollTo().performClick()
+        compose.onAllNodesWithText("Samsung Health").onLast().performScrollTo().assertIsDisplayed()
         compose.onNodeWithText("Galaxy Wearable").performScrollTo().assertIsDisplayed()
         compose.onNodeWithText("Allow access & connect").performScrollTo().assertIsDisplayed()
     }
     @Test fun allMetricsSearchAndHistoryOpen() {
-        render("Today","Every shared signal.\nA little more context.","forma-all-metrics.png",sheet="All metrics")
+        render("Today","All metrics","forma-all-metrics.png",sheet="All metrics")
         compose.onNode(hasSetTextAction()).performTextInput("calories")
         compose.onAllNodesWithText("Active calories").onLast().performClick()
         compose.onNodeWithText("28D").assertIsDisplayed()

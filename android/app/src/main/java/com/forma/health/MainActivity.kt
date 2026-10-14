@@ -22,6 +22,9 @@ import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.CancellationException
 
 class MainActivity:ComponentActivity(){
     private val model:FormaViewModel by viewModels()
@@ -45,13 +48,16 @@ class MainActivity:ComponentActivity(){
         model.message(if(enabled)"Background refresh enabled; Android controls timing." else "Background access wasn’t granted. Foreground refresh remains available.")
     }
     private val importLauncher=registerForActivityResult(ActivityResultContracts.OpenDocument()){uri->uri?.let{
-        lifecycleScope.launch { try { val json=contentResolver.openInputStream(it)?.use{stream->val out=java.io.ByteArrayOutputStream();val buffer=ByteArray(8192);var count=stream.read(buffer);while(count!=-1){require(out.size()+count<=5*1024*1024){"Choose a JSON file smaller than 5 MB."};out.write(buffer,0,count);count=stream.read(buffer)};out.toString("UTF-8")};if(json!=null)model.import(json) }catch(e:Exception){model.message(e.message?:"Couldn’t read this file")} }
+        lifecycleScope.launch { try { val json=withContext(Dispatchers.IO) { requireNotNull(contentResolver.openInputStream(it)) { "Couldn’t open this file" }.use{stream->val out=java.io.ByteArrayOutputStream();val buffer=ByteArray(8192);var count=stream.read(buffer);while(count!=-1){require(out.size()+count<=5*1024*1024){"Choose a JSON file smaller than 5 MB."};out.write(buffer,0,count);count=stream.read(buffer)};out.toString("UTF-8")}};model.import(json) }catch(e:CancellationException){throw e}catch(e:Exception){model.message(e.message?:"Couldn’t read this file")} }
     }}
-    private val exportLauncher=registerForActivityResult(ActivityResultContracts.CreateDocument("application/json")){uri->uri?.let{try{contentResolver.openOutputStream(it)?.bufferedWriter()?.use{w->w.write(HealthJson.encode(model.state.value.data))};model.message("Health records exported")}catch(e:Exception){model.message("Couldn’t save the file")}}}
+    private val exportLauncher=registerForActivityResult(ActivityResultContracts.CreateDocument("application/json")){uri->uri?.let{
+        val snapshot=model.state.value.data
+        lifecycleScope.launch { try { withContext(Dispatchers.IO) { requireNotNull(contentResolver.openOutputStream(it)) { "Couldn’t open the export destination" }.bufferedWriter().use{w->w.write(HealthJson.encode(snapshot))} };model.message("Health records exported") }catch(e:CancellationException){throw e}catch(e:Exception){model.message("Couldn’t save the file")} }
+    }}
     override fun onCreate(savedInstanceState:Bundle?){
         super.onCreate(savedInstanceState);enableEdgeToEdge(statusBarStyle=SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),navigationBarStyle=SystemBarStyle.dark(android.graphics.Color.TRANSPARENT))
         val privacy=intent.action=="androidx.health.ACTION_SHOW_PERMISSIONS_RATIONALE" || intent.action=="android.intent.action.VIEW_PERMISSION_USAGE"
-        setContent { val updateState by updates.state.collectAsStateWithLifecycle(); FormaApp(model,onConnect={requestHealth()},onBackground={requestBackground()},onImport={importLauncher.launch(arrayOf("application/json","text/plain"))},onExport={exportLauncher.launch("forma-health-records.json")},showPrivacy=privacy,updateState=updateState,onCheckUpdates={updates.check(force=true)},onInstallUpdate=updates::install,onCancelUpdate=updates::cancelDownload,onAutomaticUpdates=updates::automatic,onHistory={requestHistory()},onSamsungHealth={openPackage("com.sec.android.app.shealth")},onWatchApp={openPackage("com.samsung.android.app.watchmanager")},onHealthSettings={openHealthSettings()},onInstallationSettings={openInstallationSettings()},onWatchDownload={startActivity(Intent(Intent.ACTION_VIEW,Uri.parse("https://github.com/srinidhibhat45/forma/releases/latest")))}) }
+        setContent { val updateState by updates.state.collectAsStateWithLifecycle(); FormaApp(model,onConnect={requestHealth()},onBackground={requestBackground()},onImport={importLauncher.launch(arrayOf("application/json","text/plain"))},onExport={exportLauncher.launch("forma-health-records.json")},showPrivacy=privacy,updateState=updateState,onCheckUpdates={updates.check(force=true)},onInstallUpdate=updates::install,onCancelUpdate=updates::cancelDownload,onAutomaticUpdates=updates::automatic,onHistory={requestHistory()},onSamsungHealth={openPackage("com.sec.android.app.shealth")},onWatchApp={openPackage("com.samsung.android.app.watchmanager")},onHealthSettings={openHealthSettings()},onInstallationSettings={openInstallationSettings()},onWatchDownload={try { startActivity(Intent(Intent.ACTION_VIEW,Uri.parse("https://github.com/srinidhibhat45/forma/blob/main/docs/WATCH-COMPANION.md"))) } catch(e:Exception) { model.message("Couldn’t open the watch guide. Try your phone’s browser.") }}) }
         lifecycleScope.launch { repeatOnLifecycle(Lifecycle.State.STARTED) { while(true) { WatchLink.discover(this@MainActivity);delay(15000) } } }
         lifecycleScope.launch { repeatOnLifecycle(Lifecycle.State.RESUMED) { updates.installation.collect { launchInstaller(it) } } }
         lifecycleScope.launch { repeatOnLifecycle(Lifecycle.State.STARTED){model.refreshLocal();updates.refreshLocal();while(true){updates.check();try { model.refreshIfChanged() }catch(e:kotlinx.coroutines.CancellationException){throw e}catch(e:Exception){model.refreshConnection()};delay(60*1000)}} }

@@ -15,8 +15,6 @@ import androidx.compose.ui.unit.*
     val context=LocalContext.current
     var copied by remember(title,day,sleep,recovery,energy) { mutableStateOf(false) }
     HealthPanel(SignalCyan) {
-        Text("What each number means",fontSize=15.sp,fontWeight=FontWeight.SemiBold)
-        Text("Sleep describes your night. Recovery estimates readiness from sleep and baseline vitals. Energy is the body-battery-style estimate after recorded activity.",fontSize=11.sp,lineHeight=18.sp,color=MaterialTheme.colorScheme.onSurfaceVariant)
         ScoreDiagnostics.matchingReason(sleep,recovery,energy)?.let {
             Text("Why the scores match",fontSize=13.sp,fontWeight=FontWeight.SemiBold,color=SignalCyan)
             Text(it,fontSize=11.sp,lineHeight=18.sp)

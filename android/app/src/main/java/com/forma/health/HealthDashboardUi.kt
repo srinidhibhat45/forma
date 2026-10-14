@@ -123,7 +123,7 @@ private fun shortLabel(key:String,fallback:String)=when(key) { "restingHeartRate
                 OverviewFact("Usual wake-up",sleepClockLabel(p.wakeTime),"Median recorded end",SignalBlue,Modifier.weight(1f))
             }
             Text("${p.goalNights}/${p.nights} nights reached your sleep goal · bedtime variation ${p.bedtimeSpread?.let { "${measurement(it)} min" } ?: "needs 3 nights"}",fontSize=10.sp,lineHeight=17.sp,color=MaterialTheme.colorScheme.onSurfaceVariant)
-            Text("Shortfall is a comparison with your chosen goal, not a measurement of biological sleep debt. Variation is the median distance from your usual bedtime.",fontSize=9.sp,lineHeight=15.sp,color=MaterialTheme.colorScheme.onSurfaceVariant)
+            DetailDisclosure("About sleep patterns") { Text("Shortfall compares recorded sleep with your target. Variation is the median distance from your usual bedtime.",fontSize=11.sp,lineHeight=18.sp,color=MaterialTheme.colorScheme.onSurfaceVariant) }
         }
     }
 }
@@ -140,7 +140,7 @@ private fun shortLabel(key:String,fallback:String)=when(key) { "restingHeartRate
                 OverviewFact("Exercise",duration(week.exercise),"Recorded sessions",SignalOrange,Modifier.weight(1f))
                 OverviewFact("Step streak","${week.streak} days","${week.closedDays}/7 goals met",SignalCyan,Modifier.weight(1f))
             }
-            Text("${workouts.size} shared workouts this week. Duration includes shared sessions only; ordinary movement is represented by steps and distance.",fontSize=10.sp,lineHeight=18.sp,color=MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("${workouts.size} workouts · ${week.closedDays}/7 step targets reached",fontSize=10.sp,lineHeight=18.sp,color=MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }
@@ -149,7 +149,7 @@ fun workoutName(w:RecordedWorkout):String=w.title.ifBlank { when(w.type) {
 @Composable fun RecordedWorkouts(state:FormaState,count:Int=7,onWorkout:(String)->Unit) {
     val workouts=HealthAnalytics.workouts(state.data.days,state.selected,count)
     HealthSection("Recorded workouts","Samsung Health · last $count days",SignalOrange) {
-        if(workouts.isEmpty())HealthPanel(SignalOrange) { Text("No shared workout sessions in this range.",fontSize=14.sp);Text("Record a workout on your watch, sync Samsung Health, and allow Exercise access. Manual logs remain in Settings.",fontSize=11.sp,lineHeight=19.sp,color=MaterialTheme.colorScheme.onSurfaceVariant) }
+        if(workouts.isEmpty())HealthPanel(SignalOrange) { Text("No shared workout sessions in this range.",fontSize=14.sp);Text("Record on your watch, then sync Samsung Health.",fontSize=11.sp,lineHeight=19.sp,color=MaterialTheme.colorScheme.onSurfaceVariant) }
         workouts.take(30).forEach { w->
             Surface(onClick={onWorkout(w.id)},color=MaterialTheme.colorScheme.surface,shape=RoundedCornerShape(16.dp)) {
                 Row(Modifier.padding(15.dp),verticalAlignment=Alignment.CenterVertically) {
@@ -184,11 +184,11 @@ fun workoutName(w:RecordedWorkout):String=w.title.ifBlank { when(w.type) {
         Text("Observed heart-rate distribution",fontWeight=FontWeight.SemiBold,fontSize=15.sp)
         val bands=HealthAnalytics.heartBands(w);val labels=listOf("<100","100–119","120–139","140–159","160+")
         bands.forEachIndexed { i,minutes->Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(10.dp)) { Text(labels[i],fontSize=10.sp,modifier=Modifier.width(58.dp));LinearProgressIndicator(progress={minutes.toFloat()/bands.sum().coerceAtLeast(1)},color=SignalPink.copy(alpha=.45f+i*.13f),trackColor=MaterialTheme.colorScheme.outline,modifier=Modifier.weight(1f).height(7.dp),drawStopIndicator={});Text("$minutes min",fontSize=10.sp,modifier=Modifier.width(45.dp)) } }
-        Text("${bands.sum()} observed minute bins / ${measurement(w.minutes)} elapsed minutes. These are BPM bands, not prescribed training zones; missing minutes aren’t filled in.",fontSize=10.sp,lineHeight=18.sp,color=MaterialTheme.colorScheme.onSurfaceVariant)
+        ValueRow("Heart-rate coverage","${bands.sum()} / ${measurement(w.minutes)} min")
     } else Text("Heart-rate samples weren’t shared for this workout.",fontSize=12.sp,lineHeight=19.sp,color=MaterialTheme.colorScheme.onSurfaceVariant)
     listOf("steps","speedKmh","maxSpeedKmh","powerWatts","maxPowerWatts").forEach { key->val m=healthCatalog.first { it.key==key };Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween) { Text(m.label,fontSize=12.sp,lineHeight=19.sp,color=MaterialTheme.colorScheme.onSurfaceVariant);Text("${measurement(w.values[key],m.decimals)} ${m.unit}",fontSize=13.sp,lineHeight=20.sp,fontWeight=FontWeight.SemiBold) } }
     HealthAnalytics.pace(w)?.let { Text("Elapsed pace · ${it.toInt()}:${((it%1)*60).toInt().toString().padStart(2,'0')} /km",fontSize=12.sp,lineHeight=19.sp,color=SignalOrange) }
-    Text("Session-window totals come from Samsung records that overlap this workout; simultaneous sessions can share readings. Elapsed pace includes pauses. Imported sessions stay separate from manual logs.",fontSize=10.sp,lineHeight=18.sp,color=MaterialTheme.colorScheme.onSurfaceVariant)
+    DetailDisclosure("About this workout") { Text("These are BPM bands, not prescribed training zones. Missing minutes stay missing. Session totals use overlapping Samsung records; simultaneous sessions can share readings. Elapsed pace includes pauses.",fontSize=11.sp,lineHeight=18.sp,color=MaterialTheme.colorScheme.onSurfaceVariant) }
 }
 @Composable fun PersonalVitals(state:FormaState,onMetric:(String)->Unit) {
     HealthSection("Your personal range","Context before conclusions",SignalCyan) {
@@ -207,7 +207,7 @@ fun workoutName(w:RecordedWorkout):String=w.title.ifBlank { when(w.type) {
                 }
             } }
         }
-        Text("Based on up to 28 prior days. Orange marks a larger change from your own pattern, not a clinical abnormality.",fontSize=10.sp,lineHeight=17.sp,color=MaterialTheme.colorScheme.onSurfaceVariant)
+        Text("Orange · change from your usual pattern",fontSize=10.sp,lineHeight=17.sp,color=MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 

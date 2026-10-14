@@ -29,12 +29,13 @@ class DenseHealthScreensTest {
         compose.onAllNodesWithText("Morning run").onFirst().performClick()
         compose.onNodeWithText("Workout details").assertIsDisplayed()
         compose.onNodeWithText("Observed heart-rate distribution").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("About this workout").performScrollTo().performClick()
         compose.onNodeWithText("These are BPM bands",substring=true).performScrollTo().assertIsDisplayed()
     }
     @Test fun healthTabShowsAllCategoriesAndNutritionIsDiscoverable() {
         val model=FormaViewModel(app)
         compose.setContent { FormaApp(model,{},{},{},{},initialPage="You") }
-        compose.onNodeWithText("46 supported measurements",ignoreCase=true).assertIsDisplayed()
+        compose.onNodeWithText("44 measurements",ignoreCase=true).assertIsDisplayed()
         compose.onNode(hasScrollToIndexAction()).performScrollToNode(hasText("Nutrition"))
         compose.onNodeWithText("Protein").performScrollTo().assertIsDisplayed().performClick()
         compose.onNodeWithText("28D").assertIsDisplayed()
@@ -51,7 +52,8 @@ class DenseHealthScreensTest {
         val model=FormaViewModel(app)
         compose.setContent { FormaApp(model,{},{},{},{},initialSheet="Direct watch") }
         compose.onNodeWithText("Receive watch measurements").assertIsDisplayed()
-        compose.onNodeWithText("Get the watch companion").assertIsDisplayed()
-        compose.onNodeWithText("This does not take over your Samsung workouts",substring=true).performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Watch install guide").assertIsDisplayed()
+        compose.onNodeWithText("How to use the companion").performScrollTo().performClick()
+        compose.onNodeWithText("does not take over Samsung workouts",substring=true).performScrollTo().assertIsDisplayed()
     }
 }

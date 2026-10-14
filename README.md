@@ -15,12 +15,14 @@ Health Connect runs on compatible Android phones. It is integrated into Android 
 
 ## What works
 
+The 1.5 UX audit separates Devices from Your data, removes duplicate/unimplemented controls, and puts explanations behind expandable details. See [the function audit](docs/UX-AUDIT.md).
+
 - Today starts with animated steps, active-calorie and recorded-exercise rings, editable targets, amounts remaining, distance/floors and latest recorded heart rate with its timestamp. Recovery, sleep and body-energy estimates follow.
-- Dedicated Sleep, Move, Trends and Health screens, with all 46 supported measurements grouped by health domain and reachable history views.
+- Dedicated Sleep, Move, Trends and Health screens, with 44 native measurements grouped by health domain and reachable history views.
 - Recorded workout history in 7/28/90/365-day ranges. Session details retain timing, distance/calories/steps, minute-average heart trace and observed BPM distribution, pace, speed and power when shared.
 - Inspectable hourly activity, weekly goal completion and step streaks. Seven-night sleep duration, goal shortfall, bedtime/wake patterns, variation and overnight physiology.
 - Robust personal baseline comparisons for HRV, resting/sleeping HR, breathing, oxygen and skin-temperature signals. Body readings retain explicit measurement dates when showing an older latest value.
-- Inspectable score details explain shared inputs, matching rounded values, normalized available weights and the recorded activity window. Copy the selected date's score inputs locally for diagnosis.
+- Compact score sheets show values and contributions first. Calculation details, formulas and copying are available on expansion.
 - Energy reads start at the actual wake time, retaining movement in the first waking hour. Recorded exercise can contribute even when hourly heart rate and steps are not shared. Older caches are reconciled once to repair the omitted activity.
 - Samsung-shared nutrition energy, protein, carbs, fat, fiber, sugar, sodium and hydration, when present.
 - Optional native Wear OS companion for 60-second foreground HR checks and batched daily activity. See [watch installation](docs/WATCH-COMPANION.md).
@@ -76,7 +78,7 @@ The React design preview can be run with `npm install` and `npm run dev`; it has
 
 - Native APK assembly and optimization: passed.
 - Native score, data-quality, rings, persistence, sleep/activity analytics, watch-protocol, score diagnostics and update-policy tests: 53 passed.
-- 23 native screen/interaction/reader-fixture checks passed on an isolated Pixel 6 / Android 14 emulator. Four companion checks passed on a separate round Wear OS emulator, including a Health Services synthetic HR callback. The separate opt-in live-update test is skipped by default on each device. Actual Samsung publishing remains a physical-device verification. Live release download and signing migration have separate integration probes.
+- 39 distinct native phone checks passed across the full suite and final audit follow-up on an isolated Android 14 emulator. They cover navigation, score/metric sheets, inputs, personal-tool persistence, imports, sync states and SDK reader fixtures. The live updater check is opt-in and has separate published-release evidence. The unchanged watch sensor controls retain four prior native Health Services checks; physical Samsung behavior remains device-dependent.
 - Original preview → dedicated signing key upgrade: passed; private files, preferences and original installation identity preserved.
 - Android compatibility checks: passed with non-blocking dependency/style warnings.
 - Actual Galaxy Watch and Samsung phone syncing: requires your device; not verified here.

@@ -41,7 +41,7 @@ data class RingProgress(val value:Double?,val target:Int) {
     val remaining get()=fraction?.let { (target-value!!).coerceAtLeast(0.0) }
 }
 
-@Composable fun TodayActivity(day:HealthDay?,prefs:Preferences,onGoals:()->Unit,onMove:()->Unit) {
+@Composable fun TodayActivity(day:HealthDay?,prefs:Preferences,onGoals:()->Unit,onMove:()->Unit,movementAction:String="View movement ↗") {
     val colors=MaterialTheme.colorScheme
     val hasOnlyTotal=day?.get("activeCalories")==null && day?.get("totalCalories")!=null
     val rings=listOf(RingProgress(day?.get("steps"),prefs.stepGoal),RingProgress(day?.get(if(hasOnlyTotal)"totalCalories" else "activeCalories"),prefs.calorieGoal),RingProgress(day?.get("activeMinutes"),prefs.exerciseGoal))
@@ -96,7 +96,7 @@ data class RingProgress(val value:Double?,val target:Int) {
             Row(Modifier.fillMaxWidth().padding(top=13.dp),horizontalArrangement=Arrangement.SpaceBetween) {
                 Text("${measurement(day?.get("distanceKm"),1)} km",fontSize=11.sp,color=colors.onSurfaceVariant)
                 Text("${measurement(day?.get("floors"))} floors",fontSize=11.sp,color=colors.onSurfaceVariant)
-                Text("View movement ↗",fontSize=11.sp,color=StepsLime,modifier=Modifier.clickable(onClick=onMove))
+                Text(movementAction,fontSize=11.sp,color=StepsLime,modifier=Modifier.clickable(onClick=onMove))
             }
         }
     }
@@ -145,24 +145,10 @@ val healthCatalog=listOf(
     MetricDefinition("totalCalories","Shared total calories","kcal","Movement"),MetricDefinition("speedKmh","Average recorded speed","km/h","Movement",1),MetricDefinition("maxSpeedKmh","Peak recorded speed","km/h","Movement",1),MetricDefinition("powerWatts","Average recorded power","W","Movement"),MetricDefinition("maxPowerWatts","Peak recorded power","W","Movement"),MetricDefinition("vo2Max","Recorded VO₂ max","ml/kg/min","Heart",1),MetricDefinition("basalMetabolicRate","Basal metabolic rate","kcal/day","Body"),MetricDefinition("heightCm","Height","cm","Body",1),
     MetricDefinition("steps","Steps","steps","Movement"),MetricDefinition("activeCalories","Active calories","kcal","Movement"),MetricDefinition("activeMinutes","Recorded exercise","min","Movement"),MetricDefinition("distanceKm","Distance","km","Movement",1),MetricDefinition("floors","Floors climbed","floors","Movement"),
     MetricDefinition("heartRateLatest","Latest heart rate","bpm","Heart"),MetricDefinition("heartRateAverage","Average heart rate","bpm","Heart"),MetricDefinition("heartRateMin","Lowest recorded HR","bpm","Heart"),MetricDefinition("heartRateMax","Highest recorded HR","bpm","Heart"),MetricDefinition("restingHeartRate","Resting heart rate","bpm","Heart"),MetricDefinition("sleepHeartRate","Sleeping heart rate","bpm","Heart"),MetricDefinition("hrv","Heart rate variability","ms","Heart"),
-    MetricDefinition("sleepMinutes","Recorded sleep","min","Sleep"),MetricDefinition("sleepEfficiency","Sleep efficiency","%","Sleep"),MetricDefinition("sleepCoverage","Known-stage coverage","%","Sleep"),MetricDefinition("napMinutes","Recorded naps","min","Sleep"),MetricDefinition("sleepRegularity","Imported regularity","%","Sleep"),MetricDefinition("sleepSpo2","Sleeping oxygen","%","Sleep",1),MetricDefinition("sleepRespiratoryRate","Sleeping breathing","/min","Sleep",1),
+    MetricDefinition("sleepMinutes","Recorded sleep","min","Sleep"),MetricDefinition("sleepEfficiency","Sleep efficiency","%","Sleep"),MetricDefinition("sleepCoverage","Known-stage coverage","%","Sleep"),MetricDefinition("napMinutes","Recorded naps","min","Sleep"),MetricDefinition("sleepSpo2","Sleeping oxygen","%","Sleep",1),MetricDefinition("sleepRespiratoryRate","Sleeping breathing","/min","Sleep",1),
     MetricDefinition("spo2","Blood oxygen","%","Vitals",1),MetricDefinition("respiratoryRate","Breathing rate","/min","Vitals",1),MetricDefinition("skinTemperature","Skin temperature","°C","Vitals",1),MetricDefinition("skinTemperatureDelta","Skin temperature change","°C","Vitals",2),MetricDefinition("systolic","Systolic pressure","mmHg","Vitals"),MetricDefinition("diastolic","Diastolic pressure","mmHg","Vitals"),MetricDefinition("bloodGlucose","Blood glucose","mmol/L","Vitals",1),
-    MetricDefinition("weightKg","Weight","kg","Body",1),MetricDefinition("bodyFat","Body fat","%","Body",1),MetricDefinition("leanMassKg","Lean body mass","kg","Body",1),MetricDefinition("samsungEnergy","Imported Samsung energy","/100","Body")
+    MetricDefinition("weightKg","Weight","kg","Body",1),MetricDefinition("bodyFat","Body fat","%","Body",1),MetricDefinition("leanMassKg","Lean body mass","kg","Body",1)
 )
-
-@Composable fun TodayMetrics(day:HealthDay?,onMetric:(String)->Unit,onAll:()->Unit) {
-    val colors=MaterialTheme.colorScheme
-    Column(verticalArrangement=Arrangement.spacedBy(10.dp)) {
-        Row(Modifier.fillMaxWidth().padding(bottom=5.dp),verticalAlignment=Alignment.CenterVertically) {
-            Text("Your signals",fontSize=20.sp,fontWeight=FontWeight.Bold,modifier=Modifier.weight(1f))
-            TextButton(onClick=onAll) { Text("All metrics ↗",fontSize=11.sp,color=colors.primary) }
-        }
-        val fields=listOf("hrv","spo2","sleepMinutes","respiratoryRate","weightKg","skinTemperatureDelta")
-        fields.chunked(2).forEach { row->
-            Row(horizontalArrangement=Arrangement.spacedBy(10.dp)) { row.forEach { key->MetricTile(healthCatalog.first { it.key==key },day,Modifier.weight(1f)) { onMetric(key) } } }
-        }
-    }
-}
 
 @Composable private fun MetricTile(metric:MetricDefinition,day:HealthDay?,modifier:Modifier=Modifier,onClick:()->Unit) {
     val colors=MaterialTheme.colorScheme;val value=day?.get(metric.key)
@@ -178,7 +164,6 @@ val healthCatalog=listOf(
 @Composable fun MetricExplorer(state:FormaState,onMetric:(String)->Unit) {
     var group by rememberSaveable { mutableStateOf("All") };var query by rememberSaveable { mutableStateOf("") }
     val day=state.data.days.find { it.date==state.selected }
-    Text("Every shared signal.\nA little more context.",fontSize=23.sp,lineHeight=29.sp,fontWeight=FontWeight.SemiBold)
     OutlinedTextField(value=query,onValueChange={query=it.take(80)},placeholder={Text("Find a metric",fontSize=12.sp)},leadingIcon={Icon(Icons.Outlined.Search,null)},singleLine=true,modifier=Modifier.fillMaxWidth(),shape=RoundedCornerShape(12.dp))
     Row(Modifier.horizontalScroll(rememberScrollState()),horizontalArrangement=Arrangement.spacedBy(7.dp)) {
         listOf("All","Movement","Heart","Sleep","Vitals","Body","Nutrition").forEach { label->FilterChip(selected=group==label,onClick={group=label},label={Text(label,fontSize=11.sp)}) }
@@ -186,7 +171,7 @@ val healthCatalog=listOf(
     val fields=healthCatalog.filter { (group=="All" || it.group==group) && it.label.contains(query,ignoreCase=true) }
     if(fields.isEmpty())Text("No matching metric",fontSize=13.sp)
     fields.chunked(2).forEach { row->Row(horizontalArrangement=Arrangement.spacedBy(10.dp)) { row.forEach { metric->MetricTile(metric,day,Modifier.weight(1f)) { onMetric(metric.key) } };if(row.size==1)Spacer(Modifier.weight(1f)) } }
-    Text("A dash means no shared measurement for this day. Select a metric for its history and recording coverage.",fontSize=11.sp,lineHeight=19.sp,color=MaterialTheme.colorScheme.onSurfaceVariant)
+
 }
 
 @Composable fun MetricDetail(state:FormaState,key:String) {
@@ -203,7 +188,7 @@ val healthCatalog=listOf(
             xMin=0.0,xMax=(days.size-1).toDouble(),pointLabel={days[it.roundToInt().coerceIn(days.indices)].date.format(DateTimeFormatter.ofPattern("d MMM"))},valueLabel={measurement(it,metric.decimals)},ticks=listOf(0.0 to days.first().date.format(DateTimeFormatter.ofPattern("d MMM")),(days.size-1).toDouble() to days.last().date.format(DateTimeFormatter.ofPattern("d MMM"))))
         Text("${values.size} / $length days recorded · ${measurement(values.average(),metric.decimals)} ${metric.unit} average",fontSize=12.sp,color=MaterialTheme.colorScheme.onSurfaceVariant)
     }
-    Text(when(key) {
+    DetailDisclosure("About this measurement") { Text(when(key) {
         "heartRateLatest"->"Latest recorded sample for each day; this is not a continuous live sensor feed. The Today card shows its timestamp."
         "totalCalories"->"Total calories as shared by Samsung Health. Samsung may publish exercise-tracker calories rather than its full-day activity total. These are not interchangeable with active calories. When active calories are absent, the ring explicitly switches to Shared calories."
         "vo2Max"->"The estimate recorded by the source, not a laboratory measurement inferred by Forma. Workout/device availability and measurement conditions affect this value."
@@ -214,5 +199,5 @@ val healthCatalog=listOf(
         "spo2","sleepSpo2"->"Shared oxygen readings. Consumer watch readings and this app do not diagnose a medical condition."
         "samsungEnergy","sleepRegularity"->"Available from compatible imported files only; the native Health Connect connection does not reconstruct Samsung’s proprietary score."
         else->"Values reflect the selected day’s shared measurements. Missing days remain gaps rather than zero readings."
-    },fontSize=12.sp,lineHeight=21.sp,color=MaterialTheme.colorScheme.onSurfaceVariant)
+    },fontSize=12.sp,lineHeight=21.sp,color=MaterialTheme.colorScheme.onSurfaceVariant) }
 }

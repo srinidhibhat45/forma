@@ -5,7 +5,7 @@ import org.junit.Test
 import java.time.*
 
 class RingProgressTest {
-    @Test fun everySupportedMeasurementHasADiscoverableMetricView() { assertEquals(HealthJson.recognizedFields,healthCatalog.map { it.key }.toSet()) }
+    @Test fun everyNativeMeasurementHasADiscoverableMetricView() { assertEquals(HealthJson.recognizedFields-setOf("samsungEnergy","sleepRegularity"),healthCatalog.map { it.key }.toSet()) }
     @Test fun missingMovementIsNotZeroOrClosed() {
         val ring=RingProgress(null,10000)
         assertNull(ring.fraction);assertNull(ring.remaining);assertFalse(ring.closed)
