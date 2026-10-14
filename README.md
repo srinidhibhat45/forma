@@ -31,7 +31,7 @@ The 1.5 UX audit separates Devices from Your data, removes duplicate/unimplement
 - Steps, distance, active calories, recorded exercise time and floors when shared.
 - HRV, latest/average/range/resting/sleeping heart rate, VO₂ max, speed/power, shared total calories, basal metabolic rate, height, body composition, weight, blood pressure and glucose when shared.
 - Optional local journal, manual workouts and hydration in settings; none leads a main health page.
-- Adjustable sleep, step, hydration and bedtime goals.
+- Adjustable sleep, step, calorie, exercise and manual-water targets.
 - A two-minute breathing exercise with an animated circle.
 - Health Connect permission requests, foreground refresh and optional periodic background work.
 - Forma v1 JSON import and health-record export through Android’s file picker.

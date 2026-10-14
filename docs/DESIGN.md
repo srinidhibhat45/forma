@@ -23,3 +23,7 @@ Sleep retains its deep-blue duration panel and staged-night chart, then adds sev
 Watch readings have separate source and measurement timestamps. Heart rate is called live for at most 30 seconds after a direct measurement; direct steps can update today's ring for five minutes before reverting to shared history. Health Connect refresh time is never substituted for sensor measurement time. The companion offers a 60-second foreground heart check and optional batched daily activity.
 
 Font: [Plus Jakarta Sans](https://github.com/tokotype/PlusJakartaSans), SIL Open Font License, bundled in `docs/licenses/` and APK assets. Existing generated artwork remains available in the repository; it is not used as filler on the health dashboard.
+
+## Native UX cleanup (1.5.0)
+
+The function audit in [UX-AUDIT.md](UX-AUDIT.md) supersedes earlier navigation examples: Devices and Your data have separate roles, the source badge is read-only, 44 native metric views remain, and detailed explanations are expandable.

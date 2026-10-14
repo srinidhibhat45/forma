@@ -5,7 +5,7 @@ The native phone application reads **Samsung Health → Health Connect → Forma
 ## First connection
 
 1. Open Samsung Health, allow the watch to finish syncing, and enable the desired measurements in its Health Connect sharing settings.
-2. Open Forma's watch connection or **Health settings → Your watch & connections** and choose **Allow access & connect**. Grant the measurements you want. Grant older-history access if offered.
+2. Open Forma's watch connection or **Health settings → Devices** and choose **Allow access & connect**. Grant the measurements you want. Grant older-history access if offered.
 3. Recent records appear first. Older days import in batches, with progress and a pause control. Completed batches remain on the phone, so retrying can continue an interrupted import. Pause disables scheduled health reads until Sync is resumed; optional background refresh can then be enabled again separately.
 4. If a field says **Not shared**, check both Samsung's sharing settings and Forma's read permission. HRV, resting HR and temperature may be absent even when Samsung displays other records.
 
@@ -49,7 +49,7 @@ Primary references: [Android record reads and history permissions](https://devel
 
 The repository now includes a separate native `:wear` application. It uses the same `com.forma.health` package and dedicated release signing key as the phone app, as required by the [Wear OS Data Layer](https://developer.android.com/training/wearables/data/overview). The phone and watch advertise Forma capabilities and discover the existing nearby Galaxy Wearable pairing automatically. No second Bluetooth pairing is introduced.
 
-Install `forma-watch.apk` from the same GitHub release on the watch once; see [the companion installation guide](WATCH-COMPANION.md). In Forma phone Settings → Direct watch companion, enable **Receive watch measurements**. Open Forma on the watch and grant activity/heart-rate permissions when requested.
+Install `forma-watch.apk` from the same GitHub release on the watch once; see [the companion installation guide](WATCH-COMPANION.md). In Forma phone Settings → Devices → Watch companion, enable **Receive watch measurements**. Open Forma on the watch and grant activity/heart-rate permissions when requested.
 
 - **Measure heart rate** registers Health Services MeasureClient for at most 60 seconds while the watch activity is visible. Leaving the activity stops the measurement. Supported capabilities and sensor availability are checked. Readings are sent approximately every two seconds to nearby matching phone capabilities.
 - **Enable daily activity** registers a permission-protected passive listener for the daily steps/calories/distance/floors types that the watch supports. It resumes after reboot if still enabled and permission remains granted. It does not request background body-sensor permission or begin an exercise session.

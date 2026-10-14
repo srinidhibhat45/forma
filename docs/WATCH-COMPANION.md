@@ -15,7 +15,7 @@ adb -s WATCH_IP:CONNECTION_PORT install -r forma-watch.apk
 ```
 
 4. Open Forma on the watch. Choose **Enable daily activity** and allow physical activity access. Choose **Measure heart rate** and allow sensor access for a 60-second foreground check.
-5. On the phone, open Forma → Health settings → Direct watch companion. Enable **Receive watch measurements**, then **Find my Forma watch**. The app reuses your Galaxy Wearable pairing. Keep the two devices connected nearby.
+5. On the phone, open Forma → Health settings → Devices → Watch companion. Enable **Receive watch measurements**, then **Find my Forma watch**. The app reuses your Galaxy Wearable pairing. Keep the two devices connected nearby.
 6. Turn watch wireless debugging off after installation. It is not needed for normal Forma sensing or pairing.
 
 ## Updates
