@@ -15,6 +15,8 @@ import androidx.compose.ui.unit.*
     val context=LocalContext.current
     var copied by remember(title,day,sleep,recovery,energy) { mutableStateOf(false) }
     HealthPanel(SignalCyan) {
+        val exact=when(title) { "Sleep score"->ScoreDiagnostics.unrounded(sleep);"Recovery score"->ScoreDiagnostics.unrounded(recovery);"Body energy"->energy.points.lastOrNull()?.second;else->null }
+        exact?.let { ValueRow("Before rounding",measurement(it,2)) }
         ScoreDiagnostics.matchingReason(sleep,recovery,energy)?.let {
             Text("Why the scores match",fontSize=13.sp,fontWeight=FontWeight.SemiBold,color=SignalCyan)
             Text(it,fontSize=11.sp,lineHeight=18.sp)
@@ -26,7 +28,7 @@ import androidx.compose.ui.unit.*
         }
         Text(ScoreDiagnostics.activityStatus(day,energy),fontSize=10.sp,lineHeight=17.sp,color=MaterialTheme.colorScheme.onSurfaceVariant)
         if(title=="Body energy") {
-            Text("Samsung-shared hourly records drive this estimate. Live companion heart rate and steps currently update their own displays, not energy.",fontSize=11.sp,lineHeight=18.sp)
+            Text("Samsung-shared activity and timestamped heart readings drive this estimate. Live companion readings update their own displays, not energy.",fontSize=11.sp,lineHeight=18.sp)
             Text("${day?.samples?.mapNotNull { it.steps }?.takeIf { it.isNotEmpty() }?.sum()?.let { measurement(it)+" steps" } ?: "No step counts"} in the energy buckets · ${day?.samples.orEmpty().count { it.heartRate!=null }} buckets with heart rate",fontSize=10.sp,lineHeight=17.sp,color=MaterialTheme.colorScheme.onSurfaceVariant)
         }
         OutlinedButton(onClick={

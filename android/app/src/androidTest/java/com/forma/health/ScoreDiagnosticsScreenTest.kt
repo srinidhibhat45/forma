@@ -25,6 +25,8 @@ class ScoreDiagnosticsScreenTest {
             ScoreDiagnosticsPanel("Body energy",day,sleep,recovery,energy,480,"Samsung Health · Health Connect")
         } } }
         compose.onAllNodesWithText("86").assertCountEquals(3)
+        compose.onNodeWithText("Before rounding").assertIsDisplayed()
+        compose.onNodeWithText("85.85").assertIsDisplayed()
         compose.onNodeWithText("Why the scores match").assertIsDisplayed()
         compose.onNodeWithText("-0.15 points",substring=true).performScrollTo().assertIsDisplayed()
         compose.onNodeWithText("Waiting for newer Samsung-shared activity",substring=true).performScrollTo().assertIsDisplayed()

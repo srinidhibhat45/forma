@@ -62,3 +62,9 @@ Scope: every reachable phone screen, action, user input and supporting UI functi
 ## Evidence and limits
 
 Verification: 53 unit checks and 39 distinct native phone checks passed. The full suite passed before the final unavailable-score adjustment; the 12 audit flows, including that new regression case, passed again afterward. Compatibility checks and both optimized APK builds passed. Native snapshots come from Compose instrumentation, not browser mockups. Tests use isolated emulators, SDK response fixtures and explicitly marked demo data. They do not establish clinical validity, guarantee Samsung-only fields, or verify a user's physical permissions/transport/installer. JSON import supports Forma v1 files up to 5 MB; health export excludes personal notes/manual logs, and is not a full app backup.
+
+## Activity-reader follow-up — 1.5.1
+
+Score details now include one compact before-rounding value on expansion. The copied report adds read permissions, returned/matched hourly-summary counts, exact-query counts and raw HR fallback evidence. Main screens retain their existing density. Energy can use precise post-wake aggregates or minute-binned timestamped HR if summaries are absent; its graph retains actual timestamps for raw-only observations. Day-wide steps and overnight HR remain excluded from post-wake load. Old native caches reconcile once at data version 4; Forma v1 exports retain optional diagnostics and old files remain readable.
+
+Verification: 55 unit checks and 15 targeted native reader/score checks passed on an isolated Android 14 emulator, with the compact value checked again after its addition. The 14 reader cases include six new regressions for empty summaries, partial windows, pre-wake exclusion, raw minute coverage/timestamps, rejected overlapping summaries, and sparse summary precedence. This extends the earlier UX audit; it does not assert physical Samsung publication or validated health accuracy.

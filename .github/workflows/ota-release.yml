@@ -65,7 +65,7 @@ jobs:
           FORMA_VERSION_NAME: ${{ steps.version.outputs.name }}
           FORMA_VERSION_CODE: ${{ steps.version.outputs.code }}
         run: |
-          printf '%s\n' 'A complete native UX cleanup: Devices and Your data have separate jobs, score sheets show values first, and detailed explanations are expandable.' '' 'Removes duplicate sections, unused name/bedtime inputs and import-only metric entries. Retains 44 native measurement views and verified optional personal tools. Fixes trend precision and moves file work off the UI thread.' '' 'Local records stay in place when you update. Install forma.apk on the phone. The watch companion does not need updating for this phone UI release.' > release/notes.md
+          printf '%s\n' 'Improves post-wake energy data: missing hourly summaries can use exact-time queries or timestamped Samsung-shared heart readings.' '' 'Keeps daily steps and overnight HR out of post-wake energy. Raw heart load uses observed-minute coverage. Calculation details show scores before rounding and include read-path evidence when copied. Saved Samsung history is reconciled once after this update.' '' 'Local records stay in place when you update. Install forma.apk on the phone. The watch companion does not need updating for this phone data-reader release.' > release/notes.md
           gh release create "$FORMA_TAG" release/forma.apk release/update.json release/forma.apk.sha256 release/forma-watch.apk release/watch-update.json release/forma-watch.apk.sha256 \
             --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
             --title "Forma $FORMA_VERSION_NAME · build $FORMA_VERSION_CODE" --notes-file release/notes.md --latest

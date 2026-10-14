@@ -7,6 +7,10 @@ import java.util.Locale
 /** Describe the existing calculation. Never adjust a score to make the cards differ. */
 object ScoreDiagnostics {
     private fun precise(value:Double)=String.format(Locale.US,"%.2f",value)
+    fun unrounded(score:Score):Double? {
+        val total=score.factors.sumOf { it.weight }
+        return if(score.value!=null && total>0)score.factors.sumOf { it.value*it.weight }/total else null
+    }
     fun matchingReason(sleep:Score,recovery:Score,energy:EnergyResult):String? {
         val value=sleep.value ?: return null
         if(recovery.value!=value || energy.score.value!=value)return null
@@ -32,6 +36,7 @@ object ScoreDiagnostics {
         fun score(label:String,s:Score) {
             appendLine("$label: ${s.value ?: "unavailable"}/100 · ${s.confidence}")
             val total=s.factors.sumOf { it.weight }
+            unrounded(s)?.let { appendLine("  Before rounding: ${precise(it)}") }
             s.factors.forEach { f->appendLine("  ${f.label}: ${precise(f.value)} · ${precise(f.weight/total*100)}% of available weight · ${f.detail}") }
         }
         score("Sleep",sleep);score("Recovery",recovery)
@@ -46,6 +51,15 @@ object ScoreDiagnostics {
         amount("Exercise minutes used by energy",day?.samples.orEmpty().mapNotNull { it.activeMinutes })
         appendLine("HR-bearing energy buckets: ${day?.samples.orEmpty().count { it.heartRate!=null }}")
         amount("Explicit rest minutes",day?.samples.orEmpty().mapNotNull { it.restMinutes })
+        day?.energyRead?.let { r->
+            appendLine("Post-wake read (ISO): ${r.from} to ${r.to}")
+            appendLine("Read access: steps ${if(r.stepsAllowed)"allowed" else "not allowed"} · heart rate ${if(r.heartAllowed)"allowed" else "not allowed"}")
+            appendLine("Hourly summaries: ${r.returnedBuckets} returned · ${r.matchedBuckets} match the requested windows")
+            appendLine("Exact-time fallback queries: ${r.exactQueries}")
+            appendLine("Exact post-wake step probe: ${r.exactPostWakeSteps?.let(::precise) ?: "not returned or not needed"}")
+            appendLine("Raw post-wake HR: ${r.rawHeartMinutes} observed minutes · latest ${r.latestRawHeartAt ?: "not shared"}")
+            appendLine("Raw HR fallback buckets: ${r.rawHeartFallbackBuckets} · load scaled to observed minutes")
+        }
         for(key in listOf("sleepMinutes","sleepEfficiency","sleepCoverage","sleepRegularity","hrv","restingHeartRate","sleepHeartRate","steps","activeMinutes"))
             appendLine("$key: ${day?.get(key)?.let(::precise) ?: "not shared"}")
         matchingReason(sleep,recovery,energy)?.let(::appendLine)

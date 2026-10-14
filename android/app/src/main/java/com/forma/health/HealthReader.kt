@@ -8,7 +8,7 @@ import androidx.health.connect.client.records.*
 import androidx.health.connect.client.records.metadata.DataOrigin
 import androidx.health.connect.client.records.metadata.Device
 import androidx.health.connect.client.request.*
-import androidx.health.connect.client.aggregate.AggregationResultGroupedByDuration
+import androidx.health.connect.client.aggregate.AggregationResult
 import androidx.health.connect.client.time.TimeRangeFilter
 import kotlinx.coroutines.*
 import java.time.*
@@ -121,6 +121,16 @@ class HealthReader(private val context:Context,private val injectedClient:Health
         return data
     }
     private data class Batch(val days:List<HealthDay>,val latest:Instant?,val devices:List<String>,val issues:List<String>)
+    private class ObservedHeart {
+        val minutes=mutableMapOf<Long,Pair<Long,Int>>()
+        var latest:Instant?=null
+        fun add(at:Instant,bpm:Long,from:Instant) {
+            val minute=Duration.between(from,at).seconds/60;val previous=minutes[minute] ?: (0L to 0)
+            minutes[minute]=(previous.first+bpm) to (previous.second+1)
+            latest=maxOf(latest ?: at,at)
+        }
+        val average get()=minutes.values.map { it.first.toDouble()/it.second }.average()
+    }
     private suspend fun readRange(first:LocalDate,last:LocalDate,now:Instant,zone:ZoneId,granted:Set<String>):Batch {
         val start=first.atStartOfDay(zone).toInstant();val finish=minOf(last.plusDays(1).atStartOfDay(zone).toInstant(),now)
         val filter=TimeRangeFilter.between(start,finish)
@@ -180,9 +190,11 @@ class HealthReader(private val context:Context,private val injectedClient:Health
         val summaries=sleeps.associateWith(::summary)
         val primaryNights=sleeps.groupBy { it.endTime.atZone(zone).toLocalDate() }.values.map { nights->nights.maxBy { Duration.between(it.startTime,it.endTime) } }
         val sleepingIntervals=primaryNights.map { summaries.getValue(it) }.flatMap { s->s.intervals.filter { it.name in setOf("Asleep","Light","Deep","REM") }.map { it.start to it.end } }
-        // Stream heart pages into minute bins only inside sleep intervals: bounded memory even with high-frequency HR.
+        // Stream into bounded minute bins. Waking samples remain usable if aggregate summaries are absent.
         val sleepHeart=mutableMapOf<Long,Pair<Long,Int>>();val workoutHeart=mutableMapOf<Long,Pair<Long,Int>>()
         val latestHeart=mutableMapOf<LocalDate,HeartPoint>();val heartRange=mutableMapOf<LocalDate,Pair<Double,Double>>()
+        val wakeByDate=primaryNights.associate { it.endTime.atZone(zone).toLocalDate() to it.endTime }
+        val wakingHeart=mutableMapOf<LocalDate,MutableMap<Instant,ObservedHeart>>()
         if(HealthPermission.getReadPermission(HeartRateRecord::class) in granted) {
             var token:String?=null;val tokens=mutableSetOf<String>()
             do {
@@ -195,6 +207,10 @@ class HealthReader(private val context:Context,private val injectedClient:Health
                         if(date in first..last) {
                             if(latestHeart[date]?.at?.let { it<sample.time }!=false)latestHeart[date]=HeartPoint(sample.time,bpm)
                             val range=heartRange[date];heartRange[date]=minOf(range?.first ?: bpm,bpm) to maxOf(range?.second ?: bpm,bpm)
+                            wakeByDate[date]?.takeIf { sample.time>=it && sample.time<finish }?.let { wake->
+                                val window=wake.plusSeconds(Duration.between(wake,sample.time).seconds/3600*3600)
+                                wakingHeart.getOrPut(date) { mutableMapOf() }.getOrPut(window) { ObservedHeart() }.add(sample.time,sample.beatsPerMinute,window)
+                            }
                         }
                         if(exercises.any { sample.time>=it.startTime && sample.time<it.endTime }) {
                             val minute=sample.time.epochSecond/60;val old=workoutHeart[minute] ?: (0L to 0)
@@ -225,15 +241,59 @@ class HealthReader(private val context:Context,private val injectedClient:Health
         val exerciseIntervals=exercises.map { it.startTime to it.endTime }
         fun Instant.date()=atZone(zone).toLocalDate()
         val energyMetrics=metrics.filter { it==StepsRecord.COUNT_TOTAL || it==HeartRateRecord.BPM_AVG }.toSet()
-        val energyHours=mutableMapOf<LocalDate,List<AggregationResultGroupedByDuration>>()
+        val energySamples=mutableMapOf<LocalDate,List<EnergySample>>()
+        val energyReports=mutableMapOf<LocalDate,EnergyReadReport>()
+        fun AggregationResult.steps()=get(StepsRecord.COUNT_TOTAL)?.toDouble()?.takeIf { HealthJson.validMeasurement("steps",it) }
+        fun AggregationResult.heart()=get(HeartRateRecord.BPM_AVG)?.toDouble()?.takeIf { HealthJson.validMeasurement("heartRateAverage",it) }
         for(night in primaryNights.filter { it.endTime.date() in first..last }) {
             currentCoroutineContext().ensureActive()
-            val date=night.endTime.date();val end=minOf(date.plusDays(1).atStartOfDay(zone).toInstant(),now)
-            if(night.endTime<end && energyMetrics.isNotEmpty()) {
-                // Query from wake itself. Dropping the overlapping civil-hour bucket used to
-                // discard post-wake activity; prorating a whole bucket would invent its timing.
-                energyHours[date]=client.aggregateGroupByDuration(AggregateGroupByDurationRequest(
-                    energyMetrics,TimeRangeFilter.between(night.endTime,end),Duration.ofHours(1),dataOriginFilter=samsung))
+            val date=night.endTime.date();val wake=night.endTime;val end=minOf(date.plusDays(1).atStartOfDay(zone).toInstant(),now)
+            if(wake<end) {
+                val windows=HealthQuality.postWakeWindows(wake,end)
+                val returned=if(energyMetrics.isEmpty())emptyList()else client.aggregateGroupByDuration(AggregateGroupByDurationRequest(
+                    energyMetrics,TimeRangeFilter.between(wake,end),Duration.ofHours(1),dataOriginFilter=samsung))
+                // Require both query boundaries. A civil-hour or overlapping bucket must never
+                // be reassigned to wake. Health Connect serializes boundaries to milliseconds.
+                val matched=windows.associate { (from,to)->from to returned.singleOrNull {
+                    it.startTime.toEpochMilli()==from.toEpochMilli() && it.endTime.toEpochMilli()==to.toEpochMilli()
+                }?.result }
+                val missing=energyMetrics.filter { metric->
+                    matched.values.none { result->if(metric==StepsRecord.COUNT_TOTAL)result?.steps()!=null else result?.heart()!=null } &&
+                        (metric!=HeartRateRecord.BPM_AVG || wakingHeart[date].isNullOrEmpty())
+                }.toSet()
+                var queries=0
+                suspend fun exact(metrics:Set<androidx.health.connect.client.aggregate.AggregateMetric<*>>,from:Instant,to:Instant):AggregationResult {
+                    queries++;currentCoroutineContext().ensureActive()
+                    val result=client.aggregate(AggregateRequest(metrics,TimeRangeFilter.between(from,to),dataOriginFilter=samsung))
+                    delay(100);return result
+                }
+                // One exact post-wake probe avoids a query for every empty hour. Only metrics
+                // actually returned by that probe are retried in precise, nonoverlapping windows.
+                val probe=if(missing.isEmpty())null else exact(missing,wake,end)
+                val retry=missing.filter { if(it==StepsRecord.COUNT_TOTAL)probe?.steps()!=null else probe?.heart()!=null }.toSet()
+                val fallback=if(retry.isEmpty())emptyMap()else windows.associate { (from,to)->
+                    from to if(windows.size==1)probe!! else exact(retry,from,to)
+                }
+                var rawFallbacks=0
+                energySamples[date]=windows.mapNotNull { (from,to)->
+                    val aggregate=matched[from];val precise=fallback[from];val raw=wakingHeart[date]?.get(from)
+                    val steps=if(StepsRecord.COUNT_TOTAL in energyMetrics)aggregate?.steps() ?: precise?.steps() else null
+                    val aggregateHeart=if(HeartRateRecord.BPM_AVG in energyMetrics)aggregate?.heart() ?: precise?.heart() else null
+                    val heart=aggregateHeart ?: raw?.average
+                    val exercise=HealthQuality.unionMinutes(exerciseIntervals,from,to)
+                    if(steps==null && heart==null && exercise==0.0)null else {
+                        if(aggregateHeart==null && raw!=null)rawFallbacks++
+                        val duration=Duration.between(from,to).toMillis()/60000.0
+                        // A lone HR sample does not prove an hour of load. Raw fallback scales
+                        // only by independently observed minutes and retains its actual timestamp.
+                        val heartMinutes=if(aggregateHeart==null && raw!=null)minOf(duration,raw.minutes.size.toDouble())else duration
+                        val at=if(steps!=null || exercise>0 || aggregateHeart!=null)to else raw?.latest
+                        EnergySample(Duration.between(date.atStartOfDay(zone).toInstant(),at ?: to).toMillis()/3600000.0,steps,exercise.takeIf { it>0 },heartRate=heart,durationMinutes=heartMinutes,recordedAt=at)
+                    }
+                }
+                val raw=wakingHeart[date].orEmpty().values
+                energyReports[date]=EnergyReadReport(wake,end,StepsRecord.COUNT_TOTAL in energyMetrics,HeartRateRecord.BPM_AVG in energyMetrics,
+                    returned.size,matched.values.count { it!=null },queries,if(StepsRecord.COUNT_TOTAL in missing)probe?.steps()else null,raw.sumOf { it.minutes.size },raw.mapNotNull { it.latest }.maxOrNull(),rawFallbacks)
                 delay(100)
             }
         }
@@ -284,17 +344,10 @@ class HealthReader(private val context:Context,private val injectedClient:Health
             }
             val a=date.atStartOfDay(zone).toInstant();val b=minOf(date.plusDays(1).atStartOfDay(zone).toInstant(),now)
             if(exerciseIntervals.any { it.first<b && it.second>a })values["activeMinutes"]=HealthQuality.unionMinutes(exerciseIntervals,a,b)
-            val wake=night?.endTime
-            val samples=if(wake==null)emptyList()else HealthQuality.postWakeWindows(wake,b).mapNotNull { (from,to)->
-                val h=energyHours[date]?.firstOrNull { it.startTime==from }
-                val steps=h?.result?.get(StepsRecord.COUNT_TOTAL)?.toDouble()?.takeIf { HealthJson.validMeasurement("steps",it) }
-                val heart=h?.result?.get(HeartRateRecord.BPM_AVG)?.toDouble()?.takeIf { HealthJson.validMeasurement("heartRateAverage",it) }
-                val minutes=HealthQuality.unionMinutes(exerciseIntervals,from,to)
-                if(steps==null && heart==null && minutes==0.0)null else EnergySample(Duration.between(a,to).toMillis()/3600000.0,steps,minutes.takeIf { it>0 },heartRate=heart,durationMinutes=Duration.between(from,to).toMillis()/60000.0,recordedAt=to)
-            }
+            val samples=energySamples[date].orEmpty()
             val valid=values.filter { (key,value)->HealthJson.validMeasurement(key,value).also { if(!it)issues.add("Some $key records were outside the supported measurement range.") } }
             val activity=hours.filter { it.startTime.date()==date }.mapNotNull { h->val steps=h.result[StepsRecord.COUNT_TOTAL]?.toDouble()?.takeIf { HealthJson.validMeasurement("steps",it) };val cal=h.result[ActiveCaloriesBurnedRecord.ACTIVE_CALORIES_TOTAL]?.inKilocalories?.takeIf { HealthJson.validMeasurement("activeCalories",it) };val exercise=HealthQuality.unionMinutes(exerciseIntervals,h.startTime,h.endTime).takeIf { it>0 };if(steps==null && cal==null && exercise==null)null else ActivityHour(h.startTime,steps,cal,exercise) }
-            HealthDay(date,valid,sleep?.stages.orEmpty(),samples,night?.startTime,night?.endTime,latestHeart[date]?.at,heartTimeline,activity,recorded.filter { it.start.atZone(zone).toLocalDate()==date })
+            HealthDay(date,valid,sleep?.stages.orEmpty(),samples,night?.startTime,night?.endTime,latestHeart[date]?.at,heartTimeline,activity,recorded.filter { it.start.atZone(zone).toLocalDate()==date },energyReports[date])
         }.filter { it.values.isNotEmpty() || it.samples.isNotEmpty() || it.sleepStart!=null || it.recordedWorkouts.isNotEmpty() }.toList()
         return Batch(days,latest,devices.toList(),issues.toList())
     }

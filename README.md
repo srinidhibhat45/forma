@@ -7,8 +7,8 @@ Forma is a **native Android phone app** built with Kotlin, Jetpack Compose and M
 1. Download the [latest signed Forma APK](https://github.com/srinidhibhat45/forma/releases/latest/download/forma.apk) to your Android phone and open it to install. Install this updater-enabled build once, including over an existing Forma preview. After that, use **Health settings → App updates**. Android asks you to confirm installation; updates replace Forma in place and preserve its local records.
 2. Open Forma. The initial dashboard contains clearly labeled sample data.
 3. In Samsung Health, sync your Galaxy Watch6 Classic. Open **Samsung Health → Settings → Health Connect** and enable the records you want to share.
-4. In Forma, open **Health settings → Your watch & connections → Allow access & connect**. Select the permissions you want to grant. Partial permissions are supported.
-5. Once Samsung Health shares actual records, Forma replaces the demo. Recovery needs recorded sleep plus at least seven prior days of a matching heart-rate or HRV baseline. Body energy also needs hourly activity samples.
+4. In Forma, open **Health settings → Devices → Allow access & connect**. Select the permissions you want to grant. Partial permissions are supported.
+5. Once Samsung Health shares actual records, Forma replaces the demo. Recovery needs recorded sleep plus at least seven prior days of a matching heart-rate or HRV baseline. Body energy also needs usable activity or heart readings after waking.
 6. Optionally enable **Background refresh**. This separately requests Android’s background-read permission when the feature is available.
 
 Health Connect runs on compatible Android phones. It is integrated into Android 14+; older supported phones may require the Health Connect app. Android 9 is the app’s minimum installation version, while Health Connect itself requires a supported provider and device. Actual watch/phone data and permissions must be tested on your Samsung phone; the emulator reader tests use synthetic SDK responses. Forma can be sideloaded on the Galaxy S24 Ultra without a Play Store listing, subject to Android/Samsung installation permissions and Auto Blocker.
@@ -23,7 +23,7 @@ The 1.5 UX audit separates Devices from Your data, removes duplicate/unimplement
 - Inspectable hourly activity, weekly goal completion and step streaks. Seven-night sleep duration, goal shortfall, bedtime/wake patterns, variation and overnight physiology.
 - Robust personal baseline comparisons for HRV, resting/sleeping HR, breathing, oxygen and skin-temperature signals. Body readings retain explicit measurement dates when showing an older latest value.
 - Compact score sheets show values and contributions first. Calculation details, formulas and copying are available on expansion.
-- Energy reads start at the actual wake time, retaining movement in the first waking hour. Recorded exercise can contribute even when hourly heart rate and steps are not shared. Older caches are reconciled once to repair the omitted activity.
+- Energy reads start at the actual wake time, retaining movement in the first waking hour. Missing hourly summaries can fall back to exact-time aggregate queries and timestamped heart readings. Raw heart load uses observed-minute coverage; daily step totals are never spread into post-wake hours. Recorded exercise contributes independently. Older caches are reconciled once.
 - Samsung-shared nutrition energy, protein, carbs, fat, fiber, sugar, sodium and hydration, when present.
 - Optional native Wear OS companion for 60-second foreground HR checks and batched daily activity. See [watch installation](docs/WATCH-COMPANION.md).
 - Native chart inspection; 7-, 28- and 90-day histories for all supported metrics, a searchable metric browser; date selection.
@@ -54,7 +54,7 @@ The score model is transparent and experimental, not clinically validated. It is
 
 - Sleep: 50% duration vs goal, 30% efficiency, 20% imported schedule regularity. Missing inputs normalize weights and reduce coverage. The native Health Connect reader does not manufacture regularity.
 - Recovery: 60% sleep, 25% HRV vs personal baseline, 15% resting/sleeping HR vs personal baseline. Sleep and at least one baseline vital are required; baselines require seven distinct prior days and use robust medians/variability from up to 28 prior days, with logarithmic HRV comparisons. “Moderate” describes available coverage, not validated accuracy.
-- Body energy: starts at recovery, then responds to recorded hourly steps, exercise minutes and heart-rate load. Recorded rest can replenish it when explicitly provided. Health Connect does not directly provide restful minutes, so the native reader never invents them. The strongest overlapping activity load is counted once; partial-hour heart load is scaled to duration. This is a rough model.
+- Body energy: starts at recovery, then responds to recorded post-wake steps, exercise minutes and heart-rate load. Recorded rest can replenish it when explicitly provided. Health Connect does not directly provide restful minutes, so the native reader never invents them. The strongest overlapping activity load is counted once; partial-hour heart load is scaled to duration, and raw heart fallback only uses observed minutes. This is a rough model.
 - Manual journal, hydration and workout entries do not artificially increase scores.
 
 ## Build
@@ -77,7 +77,8 @@ The React design preview can be run with `npm install` and `npm run dev`; it has
 ## Verification
 
 - Native APK assembly and optimization: passed.
-- Native score, data-quality, rings, persistence, sleep/activity analytics, watch-protocol, score diagnostics and update-policy tests: 53 passed.
+- Native score, data-quality, rings, persistence, sleep/activity analytics, watch-protocol, score diagnostics and update-policy tests: 55 passed.
+- 1.5.1: 15 native reader/score checks passed, including six additional activity fallback regressions and cache/export preservation. Missing data remains missing; physical Samsung sharing still requires a device check.
 - 39 distinct native phone checks passed across the full suite and final audit follow-up on an isolated Android 14 emulator. They cover navigation, score/metric sheets, inputs, personal-tool persistence, imports, sync states and SDK reader fixtures. The live updater check is opt-in and has separate published-release evidence. The unchanged watch sensor controls retain four prior native Health Services checks; physical Samsung behavior remains device-dependent.
 - Original preview → dedicated signing key upgrade: passed; private files, preferences and original installation identity preserved.
 - Android compatibility checks: passed with non-blocking dependency/style warnings.

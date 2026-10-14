@@ -33,4 +33,19 @@ class ScoreDiagnosticsTest {
         assertTrue(text.contains("Steps used by energy: 100.00"));assertTrue(text.contains("Unrounded energy: 85.85"))
         assertTrue(text.contains("2026-10-14T10:00:00Z"));assertTrue(text.contains("do not currently feed these scores"))
     }
+    @Test fun twoEqualRoundedScoresExposeTheirDifferentUnderlyingCalculations() {
+        val sleep=Score(86,"Limited",listOf(Factor("Duration",82.0,"",.5),Factor("Efficiency",93.5,"",.3)))
+        val recovery=Score(86,"Limited",listOf(Factor("Sleep",86.0,"",.6),Factor("Sleeping heart",85.5,"",.15)))
+        val report=ScoreDiagnostics.report(null,sleep,recovery,EnergyResult(Score(null,"Needs activity data"),emptyList()),480,"Samsung Health · Health Connect")
+        assertTrue(report.contains("Before rounding: 86.31"));assertTrue(report.contains("Before rounding: 85.90"))
+        assertTrue(report.contains("Energy/body battery: unavailable"));assertFalse(report.contains("Unrounded energy:"))
+    }
+    @Test fun readerDiagnosticsSeparateMissingSummariesFromTimestampedFallbacks() {
+        val from=Instant.parse("2026-10-14T08:20:00Z");val to=from.plusSeconds(7200);val latest=from.plusSeconds(600)
+        val d=day().copy(energyRead=EnergyReadReport(from,to,true,true,0,0,3,1500.0,2,latest,1))
+        val report=ScoreDiagnostics.report(d,Scores.sleep(d,480),Scores.recovery(d,prior,480),Scores.energy(d,prior,480),480,"Samsung Health · Health Connect")
+        assertTrue(report.contains("Hourly summaries: 0 returned · 0 match"))
+        assertTrue(report.contains("Exact-time fallback queries: 3"));assertTrue(report.contains("Exact post-wake step probe: 1500.00"))
+        assertTrue(report.contains("Raw post-wake HR: 2 observed minutes"));assertTrue(report.contains("Raw HR fallback buckets: 1"))
+    }
 }

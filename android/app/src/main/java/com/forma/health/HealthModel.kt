@@ -10,11 +10,14 @@ import org.json.JSONObject
 data class SleepStage(val stage: String, val minutes: Double)
 data class EnergySample(val hour: Double, val steps: Double? = null, val activeMinutes: Double? = null, val restMinutes: Double? = null, val heartRate: Double? = null, val durationMinutes:Double=60.0, val recordedAt:Instant?=null)
 data class HeartPoint(val at:Instant,val bpm:Double)
+data class EnergyReadReport(val from:Instant,val to:Instant,val stepsAllowed:Boolean,val heartAllowed:Boolean,
+    val returnedBuckets:Int,val matchedBuckets:Int,val exactQueries:Int,val exactPostWakeSteps:Double?=null,
+    val rawHeartMinutes:Int=0,val latestRawHeartAt:Instant?=null,val rawHeartFallbackBuckets:Int=0)
 data class ActivityHour(val at:Instant,val steps:Double?=null,val calories:Double?=null,val exerciseMinutes:Double?=null)
 data class RecordedWorkout(val id:String,val type:Int,val title:String,val start:Instant,val end:Instant,val values:Map<String,Double> = emptyMap(),val heart:List<HeartPoint> = emptyList()) {
     val minutes get()=java.time.Duration.between(start,end).toMillis()/60000.0
 }
-data class HealthDay(val date: LocalDate, val values: Map<String, Double> = emptyMap(), val stages: List<SleepStage> = emptyList(), val samples: List<EnergySample> = emptyList(), val sleepStart: Instant? = null, val sleepEnd: Instant? = null, val heartRecordedAt:Instant?=null, val heartTimeline:List<HeartPoint> = emptyList(),val activity:List<ActivityHour> = emptyList(),val recordedWorkouts:List<RecordedWorkout> = emptyList()) {
+data class HealthDay(val date: LocalDate, val values: Map<String, Double> = emptyMap(), val stages: List<SleepStage> = emptyList(), val samples: List<EnergySample> = emptyList(), val sleepStart: Instant? = null, val sleepEnd: Instant? = null, val heartRecordedAt:Instant?=null, val heartTimeline:List<HeartPoint> = emptyList(),val activity:List<ActivityHour> = emptyList(),val recordedWorkouts:List<RecordedWorkout> = emptyList(),val energyRead:EnergyReadReport?=null) {
     operator fun get(key: String): Double? = values[key]
 }
 data class HealthData(val source: String, val days: List<HealthDay>, val syncedAt: Instant? = null, val demo: Boolean = false, val report:SyncReport?=null)
@@ -91,9 +94,16 @@ object HealthJson {
             val activity=d.optJSONArray("activityHours")?.let { a->require(a.length()<=26);(0 until a.length()).map { j->val h=a.getJSONObject(j);fun value(k:String,field:String):Double?=if(!h.has(k))null else h.getDouble(k).also { require(validMeasurement(field,it)) }
                 ActivityHour(Instant.parse(h.getString("at")),value("steps","steps"),value("calories","activeCalories"),value("exerciseMinutes","activeMinutes")) } }.orEmpty()
             val workouts=d.optJSONArray("recordedWorkouts")?.let { a->require(a.length()<=200);(0 until a.length()).map { j->val w=a.getJSONObject(j);val start=Instant.parse(w.getString("start"));val end=Instant.parse(w.getString("end"));require(end>start && java.time.Duration.between(start,end)<=java.time.Duration.ofDays(7));val v=w.optJSONObject("values");val fields=listOf("distanceKm","activeCalories","totalCalories","steps","heartRateAverage","heartRateMin","heartRateMax","speedKmh","maxSpeedKmh","powerWatts","maxPowerWatts");RecordedWorkout(w.getString("id").take(200),w.getInt("type"),w.optString("title").take(160),start,end,buildMap { fields.forEach { k->if(v?.has(k)==true)put(k,v.getDouble(k).also { require(validMeasurement(k,it)) }) } },points(w.optJSONArray("heart"),10080).also { ps->require(ps.all { it.at>=start && it.at<end }) }) }.distinctBy { it.id } }.orEmpty()
+            val energyRead=d.optJSONObject("energyRead")?.let { r->
+                fun count(key:String)=r.getInt(key).also { require(it in 0..100000) }
+                val from=Instant.parse(r.getString("from"));val to=Instant.parse(r.getString("to"));require(to>=from && java.time.Duration.between(from,to)<=java.time.Duration.ofHours(26))
+                EnergyReadReport(from,to,r.getBoolean("stepsAllowed"),r.getBoolean("heartAllowed"),count("returnedBuckets"),count("matchedBuckets"),count("exactQueries"),
+                    if(r.has("exactPostWakeSteps"))r.getDouble("exactPostWakeSteps").also { require(validMeasurement("steps",it)) }else null,
+                    count("rawHeartMinutes"),r.optString("latestRawHeartAt").takeIf { it.isNotBlank() }?.let(Instant::parse)?.also { require(it>=from && it<to) },count("rawHeartFallbackBuckets"))
+            }
             HealthDay(date,values,stages,samples,d.optString("sleepStart").takeIf { it.isNotEmpty() }?.let(Instant::parse),d.optString("sleepEnd").takeIf { it.isNotEmpty() }?.let(Instant::parse),
                 d.optString("heartRecordedAt").takeIf { it.isNotBlank() }?.let(Instant::parse),
-                points(d.optJSONArray("heartTimeline"),26),activity,workouts)
+                points(d.optJSONArray("heartTimeline"),26),activity,workouts,energyRead)
         }.sortedBy { it.date }
         require(days.map { it.date }.distinct().size==days.size) { "Duplicate dates in file" }
         val report=root.optJSONObject("syncReport")?.let { r->
@@ -113,6 +123,7 @@ object HealthJson {
             put("recordedWorkouts",JSONArray(d.recordedWorkouts.map { w->JSONObject().put("id",w.id).put("type",w.type).put("title",w.title).put("start",w.start.toString()).put("end",w.end.toString()).put("values",JSONObject(w.values)).put("heart",JSONArray(w.heart.map { JSONObject().put("at",it.at.toString()).put("bpm",it.bpm) })) }))
             put("sleepStages",JSONArray(d.stages.map { JSONObject().put("stage",it.stage).put("minutes",it.minutes) }))
             put("energySamples",JSONArray(d.samples.map { s -> JSONObject().apply { put("hour",s.hour);s.steps?.let{put("steps",it)};s.activeMinutes?.let{put("activeMinutes",it)};s.restMinutes?.let{put("restMinutes",it)};s.heartRate?.let{put("heartRate",it)};put("durationMinutes",s.durationMinutes);s.recordedAt?.let{put("recordedAt",it.toString())} } }))
+            d.energyRead?.let { r->put("energyRead",JSONObject().put("from",r.from.toString()).put("to",r.to.toString()).put("stepsAllowed",r.stepsAllowed).put("heartAllowed",r.heartAllowed).put("returnedBuckets",r.returnedBuckets).put("matchedBuckets",r.matchedBuckets).put("exactQueries",r.exactQueries).put("exactPostWakeSteps",r.exactPostWakeSteps).put("rawHeartMinutes",r.rawHeartMinutes).put("latestRawHeartAt",r.latestRawHeartAt?.toString()).put("rawHeartFallbackBuckets",r.rawHeartFallbackBuckets)) }
         } }))
     }.toString(2)
 }

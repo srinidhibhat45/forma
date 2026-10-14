@@ -7,7 +7,7 @@ data class SyncReport(
     val granted:Set<String> = emptySet(), val historyAllowed:Boolean=false,
     val scannedFrom:LocalDate?=null, val historyComplete:Boolean=false,
     val latestRecordAt:Instant?=null, val devices:List<String> = emptyList(),
-    val issues:List<String> = emptyList(),val dataVersion:Int=3
+    val issues:List<String> = emptyList(),val dataVersion:Int=4
 )
 data class SyncProgress(val label:String="",val completedDays:Int=0,val totalDays:Int=0)
 data class ObservedInsight(val title:String,val detail:String)
