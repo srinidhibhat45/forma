@@ -11,7 +11,7 @@ android {
         minSdk = 28
         targetSdk = 36
         versionCode = providers.gradleProperty("formaVersionCode").getOrElse("3").toInt()
-        versionName = providers.gradleProperty("formaVersionName").getOrElse("1.4.0")
+        versionName = providers.gradleProperty("formaVersionName").getOrElse("1.4.1")
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
     sourceSets["main"].java.srcDir("../shared")

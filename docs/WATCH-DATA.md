@@ -31,6 +31,8 @@ Forma's composites are transparent experimental wellness estimates, independent 
 
 Activity-based body energy starts from readiness, takes the strongest overlapping steps/exercise/heart load once, and scales heart load for a partial hourly bucket. It does not accumulate three representations of the same exercise. Native readings do not invent restful minutes; only explicit imported rest can add energy. The formula, its weights, minimum history and variability floors are product heuristics, not medically validated thresholds. Literature supporting personal HRV context does not validate Forma's composite: [HRV-guided training study](https://pmc.ncbi.nlm.nih.gov/articles/PMC7663087/) and [HRV monitoring review](https://pmc.ncbi.nlm.nih.gov/articles/PMC8507742/).
 
+The three displayed integers can match because the calculations share inputs and round to whole points. In 1.4.1, tapping a score explains the actual matching values, shows normalized contributing weights and the activity window timestamp, and offers **Copy score details**. This copies only the selected date's score inputs and calculation details to the local clipboard; it does not send them anywhere. Energy changes smaller than half a point may be hidden by rounding. Today's energy is flagged as waiting for newer activity if its recorded window is over two hours old; historical days are not incorrectly treated as current stale readings. Direct companion readings still do not enter the historical score model.
+
 Samsung's proprietary sleep/energy scores, raw ECG and PPG are not available through this adapter. Samsung Health Data SDK would need a separate implementation and Samsung's applicable app-verification/partnership process; it is not implemented here.
 
 ## Verification boundary

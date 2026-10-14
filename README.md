@@ -20,6 +20,7 @@ Health Connect runs on compatible Android phones. It is integrated into Android 
 - Recorded workout history in 7/28/90/365-day ranges. Session details retain timing, distance/calories/steps, minute-average heart trace and observed BPM distribution, pace, speed and power when shared.
 - Inspectable hourly activity, weekly goal completion and step streaks. Seven-night sleep duration, goal shortfall, bedtime/wake patterns, variation and overnight physiology.
 - Robust personal baseline comparisons for HRV, resting/sleeping HR, breathing, oxygen and skin-temperature signals. Body readings retain explicit measurement dates when showing an older latest value.
+- Inspectable score details explain shared inputs, matching rounded values, normalized available weights and the recorded activity window. Copy the selected date's score inputs locally for diagnosis.
 - Samsung-shared nutrition energy, protein, carbs, fat, fiber, sugar, sodium and hydration, when present.
 - Optional native Wear OS companion for 60-second foreground HR checks and batched daily activity. See [watch installation](docs/WATCH-COMPANION.md).
 - Native chart inspection; 7-, 28- and 90-day histories for all supported metrics, a searchable metric browser; date selection.
@@ -73,7 +74,7 @@ The React design preview can be run with `npm install` and `npm run dev`; it has
 ## Verification
 
 - Native APK assembly and optimization: passed.
-- Native score, data-quality, rings, persistence, sleep/activity analytics, watch-protocol and update-policy tests: 48 passed.
+- Native score, data-quality, rings, persistence, sleep/activity analytics, watch-protocol, score diagnostics and update-policy tests: 51 passed.
 - 23 native screen/interaction/reader-fixture checks passed on an isolated Pixel 6 / Android 14 emulator. Four companion checks passed on a separate round Wear OS emulator, including a Health Services synthetic HR callback. The separate opt-in live-update test is skipped by default on each device. Actual Samsung publishing remains a physical-device verification. Live release download and signing migration have separate integration probes.
 - Original preview → dedicated signing key upgrade: passed; private files, preferences and original installation identity preserved.
 - Android compatibility checks: passed with non-blocking dependency/style warnings.
